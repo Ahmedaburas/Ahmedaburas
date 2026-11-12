@@ -1,36 +1,22 @@
-import { alertSignature, exceededNotifyMetrics, heatNotifyBand, notifyMetrics } from "./weather.js";
-
-function riyadhTime(iso) {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Riyadh",
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(iso));
-}
+import { alertSignature, exceededNotifyMetrics, heatNotifyBand } from "./weather.js";
 
 const BAND_INSTRUCTION = {
   wind: {
-    warn: (tile) =>
-      `${tile.label} is ${tile.display}. SOP-59 table: WARN at 32 km/h, STOP at 48 km/h. Warn the outdoor crews. Secure loose materials. Limit lifting and work at height. Stop outdoor work if the wind reaches 48 km/h.`,
-    stop: (tile) =>
-      `${tile.label} is ${tile.display}. SOP-59 table: STOP at 48 km/h. Stop outdoor work now. Stop lifting and work at height. Move the crews to a safe area. Do not restart outdoor work until the wind is below 48 km/h, and keep the WARN controls while it stays at 32 km/h or more.`,
+    warn: () => "Secure loose materials. Limit lifting and work at height. Stop outdoor work if the wind reaches 48 km/h.",
+    stop: () => "Stop outdoor work. Stop lifting and work at height. Move crews to a safe area.",
   },
   rain: {
-    warn: (tile) =>
-      `${tile.label} is ${tile.display}. SOP-59 table: WARN at moderate rain (2.5 mm/h), STOP at heavy rain (7.6 mm/h). Warn the outdoor crews. Stop work on slippery surfaces and exposed electrical equipment. Stop all outdoor work if the rain reaches 7.6 mm/h.`,
-    stop: (tile) =>
-      `${tile.label} is ${tile.display}. SOP-59 table: STOP at heavy rain (7.6 mm/h). Stop outdoor work now. Keep the crews under cover until the rain is below 7.6 mm/h.`,
+    warn: () => "Stop work on slippery surfaces and exposed electrical equipment. Stop all outdoor work if rain reaches 7.6 mm/h.",
+    stop: () => "Stop outdoor work. Keep crews under cover.",
   },
 };
 
 function wbgtInstruction(snapshot) {
-  const wbgt = Number(snapshot.raw?.wbgt);
-  const reading = `WBGT is ${wbgt.toFixed(1)}°C`;
-  const water = "Water intake: 4–6 cups per hour, mandatory.";
-  if (heatNotifyBand(wbgt) === "extreme_danger") {
-    return `${reading}. Heat stress table 3.4: Extreme Danger, WBGT above 50°C. Workload: All. Work/rest cycle: 25% work / 75% rest, or stop. Suspend outdoor work. ${water} Reference: OSHA Heat Stress Guidelines / ACGIH TLV.`;
+  const water = "Water intake: 4–6 cups per hour.";
+  if (heatNotifyBand(snapshot.raw?.wbgt) === "extreme_danger") {
+    return `All workloads. Work/rest: 25% work / 75% rest, or stop. Suspend outdoor work. ${water}`;
   }
-  return `${reading}. Heat stress table 3.4: Danger, WBGT 42–50°C. Workload: Heavy. Work/rest cycle: 50% work / 50% rest. Restrict heavy work. ${water} Reference: OSHA Heat Stress Guidelines / ACGIH TLV.`;
+  return `Heavy workload. Work/rest: 50% work / 50% rest. Restrict heavy work. ${water}`;
 }
 
 export function safetyInstructions(snapshot) {
@@ -59,26 +45,9 @@ export function safetyInstructions(snapshot) {
 }
 
 export function formatWeatherAlert(snapshot) {
-  const instructions = safetyInstructions(snapshot);
-  const lines = [
-    "Inma Steel · INMA-HSE-SOP-59 weather alert",
-    `Location: ${snapshot.location}`,
-    `Time (Asia/Riyadh): ${riyadhTime(snapshot.fetchedAt)}`,
-    `Conditions: ${snapshot.condition}`,
-    "",
-    "Safety instructions for the thresholds that have been exceeded:",
-    ...instructions.map((item, index) => `${index + 1}. ${item.text}`),
-    "",
-    "Readings used for this alert:",
-    ...notifyMetrics(snapshot).map((tile) => {
-      if (tile.id !== "wbgt") return `- ${tile.label}: ${tile.display} — ${tile.status}`;
-      const band = heatNotifyBand(snapshot.raw?.wbgt);
-      const value = snapshot.raw?.wbgt == null ? tile.display : `${Number(snapshot.raw.wbgt).toFixed(1)}°C`;
-      const status = band === "extreme_danger" ? "EXTREME DANGER" : band === "danger" ? "DANGER" : "under 42°C";
-      return `- ${tile.label}: ${value} — ${status}`;
-    }),
-  ];
-  return lines.join("\n");
+  return safetyInstructions(snapshot)
+    .map((item) => `${item.label}: ${item.display} — ${item.status}\n${item.text}`)
+    .join("\n\n");
 }
 
 export async function sendEmail({ to, subject, text }) {

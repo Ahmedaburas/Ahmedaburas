@@ -191,9 +191,9 @@ assert(hot.raw.wbgt < 42, "34°C air temperature stays under the WBGT notify lev
 assert(!shouldAutoNotify(alertSignature(calm), hot), "ambient temperature alone should not notify");
 
 const windText = formatWeatherAlert(windStop);
-assert(windText.includes("STOP at 48 km/h"), "wind stop instruction uses the SOP-59 table");
-assert(windText.includes("Stop outdoor work now"), "wind stop instruction tells crews to stop");
-assert(!windText.includes("2.5 mm/h"), "a wind-only alert does not add a rain instruction");
+assert(windText.includes("Wind speed: 50 km/h — STOP"), "wind stop names the exceeded threshold");
+assert(windText.includes("Stop outdoor work."), "wind stop instruction tells crews to stop");
+assert(!windText.includes("Rain"), "a wind-only alert does not mention rain");
 assert(safetyInstructions(humid).length === 0, "humidity does not add a safety instruction");
 const moderateRain = snapshotForTests({
   ...calm.raw,
@@ -203,7 +203,8 @@ const moderateRain = snapshotForTests({
   weatherCode: 63,
   hasThunder: false,
 });
-assert(formatWeatherAlert(moderateRain).includes("WARN at moderate rain (2.5 mm/h)"), "moderate rain instruction");
+assert(formatWeatherAlert(moderateRain).includes("Rain: 3.0 mm/h — WARN"), "moderate rain names the exceeded threshold");
+assert(formatWeatherAlert(moderateRain).includes("slippery surfaces"), "moderate rain instruction");
 const heavyRain = snapshotForTests({
   ...calm.raw,
   source: "test",
@@ -212,7 +213,8 @@ const heavyRain = snapshotForTests({
   weatherCode: 65,
   hasThunder: false,
 });
-assert(formatWeatherAlert(heavyRain).includes("STOP at heavy rain (7.6 mm/h)"), "heavy rain instruction");
+assert(formatWeatherAlert(heavyRain).includes("Rain: 8.0 mm/h — STOP"), "heavy rain names the exceeded threshold");
+assert(formatWeatherAlert(heavyRain).includes("Keep crews under cover."), "heavy rain instruction");
 assert(!formatWeatherAlert(hot).includes("33°C"), "a hot-air reading under WBGT 42 adds no heat instruction");
 const underHeatAlert = snapshotForTests({
   ...calm.raw,
@@ -239,11 +241,11 @@ const heatDanger = snapshotForTests({
 assert(heatDanger.raw.wbgt >= 42 && heatDanger.raw.wbgt <= 50, "this case sits in the Danger WBGT band");
 assert(shouldAutoNotify(alertSignature(calm), heatDanger), "WBGT of 42°C or higher should notify");
 const dangerText = formatWeatherAlert(heatDanger);
-assert(dangerText.includes("Danger, WBGT 42–50°C"), "Danger row is named");
+assert(dangerText.includes("43.8°C — DANGER"), "Danger row names the WBGT reading");
 assert(dangerText.includes("50% work / 50% rest"), "Danger work/rest cycle is included");
 assert(dangerText.includes("Restrict heavy work"), "Danger action is included");
 assert(dangerText.includes("4–6 cups per hour"), "mandatory water intake is included");
-assert(!dangerText.includes("CAUTION at 33°C"), "ambient temperature does not add its own instruction");
+assert(!dangerText.includes("Temperature"), "ambient temperature is left out of the message");
 const heatExtreme = snapshotForTests({
   ...calm.raw,
   source: "test",
@@ -257,7 +259,7 @@ const heatExtreme = snapshotForTests({
 assert(heatExtreme.raw.wbgt > 50, "this case sits above 50°C WBGT");
 assert(shouldAutoNotify(alertSignature(heatDanger), heatExtreme), "moving from Danger to Extreme Danger should notify");
 const extremeText = formatWeatherAlert(heatExtreme);
-assert(extremeText.includes("Extreme Danger, WBGT above 50°C"), "Extreme Danger row is named");
+assert(extremeText.includes("— EXTREME DANGER"), "Extreme Danger row is named");
 assert(extremeText.includes("25% work / 75% rest"), "Extreme Danger work/rest cycle is included");
 assert(extremeText.includes("Suspend outdoor work"), "Extreme Danger action is included");
 const both = snapshotForTests({
@@ -270,7 +272,7 @@ const both = snapshotForTests({
   hasThunder: false,
 });
 const bothText = formatWeatherAlert(both);
-assert(bothText.indexOf("WARN at 32 km/h") < bothText.indexOf("STOP at heavy rain"), "each exceeded threshold gets its own instruction");
+assert(bothText.indexOf("Wind speed: 36 km/h — WARN") < bothText.indexOf("Rain: 8.0 mm/h — STOP"), "each exceeded threshold gets its own instruction");
 
 const notifyBefore = weatherAdmin.listNotifications(db).length;
 db.prepare("UPDATE weather_settings SET auto_notify = 0, last_overall_level = ?").run("safe");
