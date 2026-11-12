@@ -12,11 +12,11 @@ import { PageHeader } from "./ui.jsx";
 
 function MetaGate({ children }) {
   const state = useFetch("/api/meta");
-  if (!state.data && state.loading) return <p className="boot">Loading the HSE platform…</p>;
+  if (!state.data && state.loading) return <p className="boot">Loading Inma Steel HSE…</p>;
   if (!state.data) {
     return (
       <p className="boot">
-        Cannot reach the HSE service. From the project folder run <code>npm run dev</code>, then refresh.
+        Cannot reach the Inma Steel HSE service. From the project folder run <code>npm run dev</code>, then refresh.
         {state.error ? ` ${state.error}` : ""}
       </p>
     );
@@ -43,12 +43,10 @@ function Layout() {
       ) : null}
       <aside id="nav" className={open ? "sidebar open" : "sidebar"}>
         <NavLink to="/" className="brand" end>
-          <span className="mark" aria-hidden="true">
-            HSE
-          </span>
-          <span>
-            <strong>Field safety</strong>
-            <small>Reporting platform</small>
+          <img className="brand-logo" src="/brand/inma-logo-white.png" alt="Inma Steel Fabricators" />
+          <span className="brand-copy">
+            <strong>HSE reporting</strong>
+            <small>Inma Steel Fabricators</small>
           </span>
         </NavLink>
         <nav aria-label="Modules">
@@ -70,7 +68,10 @@ function Layout() {
           >
             Menu
           </button>
-          <span>HSE platform</span>
+          <span className="topbar-brand">
+            <img src="/brand/inma-mark.png" alt="" width="22" height="22" />
+            Inma Steel · HSE
+          </span>
         </div>
         <main id="content" className="content">
           <Outlet />

@@ -164,7 +164,7 @@ export function Dashboard() {
   return (
     <>
       <PageHeader
-        title="Safety performance"
+        title="Inma Steel · Safety performance"
         lede="Live counts from near misses, incidents, audits, permits, job safety analyses, and risk assessments. Every number opens the records it counts."
       />
       <div className="filters">

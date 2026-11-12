@@ -1,27 +1,34 @@
 :root {
-  --ink: #1b2832;
-  --muted: #5c6c7a;
-  --line: #d5dee6;
-  --bg: #eef2f5;
+  /* Inma Steel Fabricators — from inmasteel.com.sa brand CSS / logo */
+  --ink: #2c2828;
+  --muted: #5f5757;
+  --line: #e0d7d7;
+  --bg: #f4f1f1;
   --card: #ffffff;
-  --navy: #10283a;
-  --navy-2: #17364c;
-  --copper: #b8612d;
-  --teal: #0f6e6b;
+  --navy: #1f1f1f;
+  --navy-2: #343333;
+  --copper: #ca2032;
+  --copper-deep: #982423;
+  --teal: #ca2032;
+  --brand: #ca2032;
+  --brand-deep: #982423;
   --good: #14613a;
   --good-bg: #e6f6ee;
   --warn: #8a5a08;
   --warn-bg: #fbf3e0;
-  --bad: #9d261e;
+  --bad: #ca2032;
   --bad-bg: #fdeceb;
-  --info: #1a5278;
-  --info-bg: #e7f1f8;
-  --shadow: 0 1px 2px rgba(16, 40, 58, 0.05), 0 12px 32px rgba(16, 40, 58, 0.05);
+  --info: #343333;
+  --info-bg: #f0eeee;
+  --shadow: 0 1px 2px rgba(44, 40, 40, 0.06), 0 12px 32px rgba(44, 40, 40, 0.06);
   --radius: 12px;
   --sans: "Source Sans 3", "Segoe UI", sans-serif;
   --display: "Barlow", "Source Sans 3", sans-serif;
   color: var(--ink);
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 12% -10%, rgba(202, 32, 50, 0.08), transparent 42%),
+    radial-gradient(circle at 100% 0%, rgba(152, 36, 35, 0.07), transparent 36%),
+    var(--bg);
   font-family: var(--sans);
   font-size: 16.5px;
   line-height: 1.45;
@@ -58,30 +65,40 @@ p { margin: 0; }
 
 .app { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
 .sidebar {
-  background: var(--navy);
-  color: #e7eef4;
+  background:
+    linear-gradient(165deg, #2a2a2a 0%, var(--navy) 42%, #141414 100%);
+  color: #f2ecec;
   padding: 1.1rem 0.85rem;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  border-right: 1px solid rgba(202, 32, 50, 0.28);
 }
 .brand {
   display: flex;
-  gap: 0.7rem;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.55rem;
+  align-items: flex-start;
   color: white;
   text-decoration: none;
-  padding: 0.2rem 0.45rem;
+  padding: 0.35rem 0.45rem 0.55rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
-.brand strong { display: block; font-family: var(--display); font-size: 1.02rem; }
-.brand small { color: #b7c6d3; }
+.brand-logo {
+  display: block;
+  width: min(100%, 188px);
+  height: auto;
+}
+.brand strong { display: block; font-family: var(--display); font-size: 0.98rem; }
+.brand small { color: #c9bdbd; }
+.brand-copy { display: grid; gap: 0.08rem; }
 .mark {
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: var(--copper);
+  background: linear-gradient(135deg, var(--brand-deep), var(--brand));
   color: white;
   font-family: var(--display);
   font-weight: 700;
@@ -90,7 +107,7 @@ p { margin: 0; }
 }
 .sidebar nav { display: flex; flex-direction: column; gap: 0.15rem; }
 .sidebar nav a {
-  color: #d5e0e8;
+  color: #e4dcdc;
   text-decoration: none;
   padding: 0.48rem 0.7rem;
   border-radius: 8px;
@@ -98,13 +115,24 @@ p { margin: 0; }
 }
 .sidebar nav a:hover { background: rgba(255, 255, 255, 0.06); }
 .sidebar nav a[aria-current="page"] {
-  background: var(--navy-2);
+  background: rgba(202, 32, 50, 0.16);
   color: white;
-  border-left-color: var(--copper);
+  border-left-color: var(--brand);
 }
 
 .workspace { min-width: 0; }
 .topbar { display: none; }
+.topbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+}
+.topbar-brand img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
 .content { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 1.4rem 0 3rem; }
 
 .page-head { margin-bottom: 1rem; }
@@ -123,12 +151,12 @@ p { margin: 0; }
   font-weight: 650;
   font-weight: 600;
 }
-.button { background: var(--navy); color: white; }
-.button.secondary { background: white; color: var(--navy); border-color: #c5d0da; }
-.button.ghost { background: transparent; color: var(--teal); }
+.button { background: linear-gradient(90deg, var(--brand-deep), var(--brand)); color: white; border-color: transparent; }
+.button.secondary { background: white; color: var(--ink); border-color: #d2c8c8; }
+.button.ghost { background: transparent; color: var(--brand); }
 .button:disabled { opacity: 0.6; cursor: wait; }
 .button:focus-visible, a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
 
@@ -170,9 +198,9 @@ textarea { min-height: 6.5rem; resize: vertical; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
 .chip {
-  border: 1px solid #e3c3b0;
-  background: #fbf4ef;
-  color: #7a3e18;
+  border: 1px solid #efc4c9;
+  background: #fdf1f3;
+  color: #982423;
   border-radius: 999px;
   padding: 0.2rem 0.65rem;
 }
@@ -195,7 +223,7 @@ textarea { min-height: 6.5rem; resize: vertical; }
   color: inherit;
 }
 .record-row:last-child { border-bottom: 0; }
-.record-row:hover { background: #f6fafc; }
+.record-row:hover { background: #faf5f5; }
 .record-ref { grid-area: ref; align-self: center; color: var(--navy); font-weight: 700; font-variant-numeric: tabular-nums; }
 .record-ref.large { margin: -0.4rem 0 0.45rem; }
 .record-title { grid-area: title; font-weight: 650; font-weight: 600; overflow-wrap: anywhere; }
