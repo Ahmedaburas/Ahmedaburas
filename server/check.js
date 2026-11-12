@@ -12,7 +12,7 @@ import {
   snapshotForTests,
 } from "./weather.js";
 import * as weatherAdmin from "./weatherAdmin.js";
-import { shouldAutoNotify } from "./weatherNotify.js";
+import { formatWeatherAlert, safetyInstructions, shouldAutoNotify } from "./weatherNotify.js";
 
 process.env.HSE_DB = process.env.HSE_DB || ":memory:";
 
@@ -189,6 +189,88 @@ const hot = snapshotForTests({
 });
 assert(hot.tiles.find((tile) => tile.id === "wbgt").level === "safe", "this heat case keeps WBGT inside its threshold");
 assert(shouldAutoNotify(alertSignature(calm), hot), "temperature at 34°C should notify");
+
+const windText = formatWeatherAlert(windStop);
+assert(windText.includes("STOP at 48 km/h"), "wind stop instruction uses the SOP-59 table");
+assert(windText.includes("Stop outdoor work now"), "wind stop instruction tells crews to stop");
+assert(!windText.includes("2.5 mm/h"), "a wind-only alert does not add a rain instruction");
+assert(safetyInstructions(humid).length === 0, "humidity does not add a safety instruction");
+const moderateRain = snapshotForTests({
+  ...calm.raw,
+  source: "test",
+  condition: "rain",
+  rainMmH: 3,
+  weatherCode: 63,
+  hasThunder: false,
+});
+assert(formatWeatherAlert(moderateRain).includes("WARN at moderate rain (2.5 mm/h)"), "moderate rain instruction");
+const heavyRain = snapshotForTests({
+  ...calm.raw,
+  source: "test",
+  condition: "rain",
+  rainMmH: 8,
+  weatherCode: 65,
+  hasThunder: false,
+});
+assert(formatWeatherAlert(heavyRain).includes("STOP at heavy rain (7.6 mm/h)"), "heavy rain instruction");
+assert(formatWeatherAlert(hot).includes("CAUTION at 33°C"), "temperature caution instruction");
+const highHeat = snapshotForTests({
+  ...calm.raw,
+  source: "test",
+  condition: "hot",
+  tempC: 41,
+  feelsC: 41,
+  rh: 5,
+  hasThunder: false,
+  weatherCode: 0,
+});
+assert(formatWeatherAlert(highHeat).includes("HIGH at 40°C"), "temperature high instruction");
+const extremeHeat = snapshotForTests({
+  ...calm.raw,
+  source: "test",
+  condition: "extreme",
+  tempC: 46,
+  feelsC: 48,
+  rh: 5,
+  hasThunder: false,
+  weatherCode: 0,
+});
+assert(formatWeatherAlert(extremeHeat).includes("EXTREME at 45°C"), "temperature extreme instruction");
+const wbgtCaution = snapshotForTests({
+  ...calm.raw,
+  source: "test",
+  condition: "humid heat",
+  tempC: 30,
+  feelsC: 32,
+  rh: 50,
+  hasThunder: false,
+  weatherCode: 0,
+});
+assert(wbgtCaution.tiles.find((tile) => tile.id === "temperature").level === "ok", "WBGT caution case keeps air temperature inside its band");
+assert(formatWeatherAlert(wbgtCaution).includes("CAUTION at 28°C"), "WBGT caution instruction");
+const wbgtStop = snapshotForTests({
+  ...calm.raw,
+  source: "test",
+  condition: "heat stress",
+  tempC: 32,
+  feelsC: 36,
+  rh: 70,
+  hasThunder: false,
+  weatherCode: 0,
+});
+assert(wbgtStop.tiles.find((tile) => tile.id === "wbgt").level === "stop", "WBGT stop case");
+assert(formatWeatherAlert(wbgtStop).includes("STOP at 35°C"), "WBGT stop instruction");
+const both = snapshotForTests({
+  ...calm.raw,
+  source: "test",
+  condition: "storm",
+  windKmh: 36,
+  rainMmH: 8,
+  weatherCode: 65,
+  hasThunder: false,
+});
+const bothText = formatWeatherAlert(both);
+assert(bothText.indexOf("WARN at 32 km/h") < bothText.indexOf("STOP at heavy rain"), "each exceeded threshold gets its own instruction");
 
 const notifyBefore = weatherAdmin.listNotifications(db).length;
 db.prepare("UPDATE weather_settings SET auto_notify = 0, last_overall_level = ?").run("safe");

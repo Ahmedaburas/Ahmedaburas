@@ -1,4 +1,4 @@
-import { deliverToContacts, shouldAutoNotify } from "./weatherNotify.js";
+import { deliverToContacts, formatWeatherAlert, shouldAutoNotify } from "./weatherNotify.js";
 import { alertSignature, exceededNotifyMetrics, getCachedWeather, refreshWeatherReading } from "./weather.js";
 
 function rowToContact(row) {
@@ -137,7 +137,14 @@ export async function getWeather(db, { force = false } = {}) {
       "UPDATE weather_settings SET last_overall_level = ?, last_fetched_at = ?, last_alert_signature = ? WHERE id = 1",
     ).run(snapshot.overall.level, snapshot.fetchedAt, signature);
   }
-  return { ...snapshot, settings: getSettings(db), notified, exceeded: exceededNotifyMetrics(snapshot) };
+  const exceeded = exceededNotifyMetrics(snapshot);
+  return {
+    ...snapshot,
+    settings: getSettings(db),
+    notified,
+    exceeded,
+    alertMessage: exceeded.length ? formatWeatherAlert(snapshot) : "",
+  };
 }
 
 export async function notifyNow(db, { groupIds = [] } = {}) {

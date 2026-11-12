@@ -9,21 +9,24 @@ export function WeatherAlerts() {
   const [contacts, setContacts] = useState([]);
   const [groups, setGroups] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [alertMessage, setAlertMessage] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   const reload = useCallback(async () => {
     try {
-      const [s, c, g, n] = await Promise.all([
+      const [s, c, g, n, weather] = await Promise.all([
         api.get("/api/weather/settings"),
         api.get("/api/weather/contacts"),
         api.get("/api/weather/groups"),
         api.get("/api/weather/notifications?limit=15"),
+        api.get("/api/weather"),
       ]);
       setSettings(s);
       setContacts(c.items);
       setGroups(g.items);
       setNotifications(n.items);
+      setAlertMessage(weather.alertMessage || "");
       setError("");
     } catch (err) {
       setError(err.message);
@@ -116,6 +119,16 @@ export function WeatherAlerts() {
               Notify now
             </button>
           </div>
+          <h3>Safety instruction in the alert</h3>
+          {alertMessage ? (
+            <pre className="alert-copy">{alertMessage}</pre>
+          ) : (
+            <p className="quiet">
+              No safety instruction. Wind, rain, temperature, and WBGT are inside the SOP-59 table, so nothing is sent.
+              When one of those bands is exceeded, the email and WhatsApp text names that reading and the instruction for
+              that row.
+            </p>
+          )}
         </section>
       ) : null}
 
@@ -238,6 +251,7 @@ export function WeatherAlerts() {
               {row.manual ? " (manual)" : ""}
               <br />
               <span className="quiet">{row.createdAt}</span>
+              {row.summary ? <pre className="alert-copy">{row.summary}</pre> : null}
               {row.delivery?.length ? (
                 <ul>
                   {row.delivery.map((item, index) => (

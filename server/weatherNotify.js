@@ -8,16 +8,65 @@ function riyadhTime(iso) {
   }).format(new Date(iso));
 }
 
+const BAND_INSTRUCTION = {
+  wind: {
+    warn: (tile) =>
+      `${tile.label} is ${tile.display}. SOP-59 table: WARN at 32 km/h, STOP at 48 km/h. Warn the outdoor crews. Secure loose materials. Limit lifting and work at height. Stop outdoor work if the wind reaches 48 km/h.`,
+    stop: (tile) =>
+      `${tile.label} is ${tile.display}. SOP-59 table: STOP at 48 km/h. Stop outdoor work now. Stop lifting and work at height. Move the crews to a safe area. Do not restart outdoor work until the wind is below 48 km/h, and keep the WARN controls while it stays at 32 km/h or more.`,
+  },
+  rain: {
+    warn: (tile) =>
+      `${tile.label} is ${tile.display}. SOP-59 table: WARN at moderate rain (2.5 mm/h), STOP at heavy rain (7.6 mm/h). Warn the outdoor crews. Stop work on slippery surfaces and exposed electrical equipment. Stop all outdoor work if the rain reaches 7.6 mm/h.`,
+    stop: (tile) =>
+      `${tile.label} is ${tile.display}. SOP-59 table: STOP at heavy rain (7.6 mm/h). Stop outdoor work now. Keep the crews under cover until the rain is below 7.6 mm/h.`,
+  },
+  temperature: {
+    caution: (tile) =>
+      `${tile.label} is ${tile.display}. SOP-59 table: CAUTION at 33°C, HIGH at 40°C, EXTREME at 45°C. Use caution for heat. Provide drinking water, shade, and rest breaks. Watch for heat illness. Restrict outdoor work if the temperature reaches 40°C.`,
+    high: (tile) =>
+      `${tile.label} is ${tile.display}. SOP-59 table: HIGH at 40°C, EXTREME at 45°C. High heat risk. Shorten outdoor work, increase rest in the shade, and provide drinking water. Stop heavy outdoor tasks. Stop outdoor work if the temperature reaches 45°C.`,
+    extreme: (tile) =>
+      `${tile.label} is ${tile.display}. SOP-59 table: EXTREME at 45°C. Stop outdoor work for extreme heat. Move the crews to shade or a cooled area and watch for heat illness.`,
+  },
+  wbgt: {
+    caution: (tile) =>
+      `${tile.label} is ${tile.display}. SOP-59 table: CAUTION at 28°C, HIGH at 33°C, STOP at 35°C. Use caution for heat stress. Provide drinking water, shade, and scheduled rest, and use a buddy check. Restrict outdoor work if WBGT reaches 33°C.`,
+    high: (tile) =>
+      `${tile.label} is ${tile.display}. SOP-59 table: HIGH at 33°C, STOP at 35°C. High heat-stress risk. Cut outdoor work periods, enforce rest in the shade, and provide drinking water. Stop outdoor work if WBGT reaches 35°C.`,
+    stop: (tile) =>
+      `${tile.label} is ${tile.display}. SOP-59 table: STOP at 35°C. Stop outdoor work for heat stress. Move the crews to shade or a cooled area and watch for heat illness.`,
+  },
+};
+
+export function safetyInstructions(snapshot) {
+  return exceededNotifyMetrics(snapshot).map((tile) => {
+    const write = BAND_INSTRUCTION[tile.id]?.[tile.level];
+    return {
+      id: tile.id,
+      label: tile.label,
+      display: tile.display,
+      status: tile.status,
+      text: write
+        ? write(tile)
+        : `${tile.label} is ${tile.display} (${tile.status}). Follow INMA-HSE-SOP-59 for this band.`,
+    };
+  });
+}
+
 export function formatWeatherAlert(snapshot) {
-  const exceeded = exceededNotifyMetrics(snapshot);
+  const instructions = safetyInstructions(snapshot);
   const lines = [
-    `Inma Steel · SOP-59 weather alert`,
+    "Inma Steel · INMA-HSE-SOP-59 weather alert",
     `Location: ${snapshot.location}`,
-    `Exceeded: ${exceeded.map((tile) => `${tile.label} ${tile.display} (${tile.status})`).join("; ") || "none"}`,
+    `Time (Asia/Riyadh): ${riyadhTime(snapshot.fetchedAt)}`,
     `Conditions: ${snapshot.condition}`,
-    `Time (Riyadh): ${riyadhTime(snapshot.fetchedAt)}`,
     "",
-    ...notifyMetrics(snapshot).map((tile) => `${tile.label}: ${tile.display} — ${tile.status}`),
+    "Safety instructions for the thresholds that have been exceeded:",
+    ...instructions.map((item, index) => `${index + 1}. ${item.text}`),
+    "",
+    "Readings used for this alert:",
+    ...notifyMetrics(snapshot).map((tile) => `- ${tile.label}: ${tile.display} — ${tile.status}`),
   ];
   return lines.join("\n");
 }
@@ -126,7 +175,7 @@ export async function deliverToContacts(db, snapshot, { prevLevel, manual = fals
   db.prepare(
     `INSERT INTO weather_notifications (created_at, prev_level, new_level, summary, delivery_log, manual)
      VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(createdAt, prevLevel || "", newLevel, text.slice(0, 500), JSON.stringify(log), manual ? 1 : 0);
+  ).run(createdAt, prevLevel || "", newLevel, text.slice(0, 4000), JSON.stringify(log), manual ? 1 : 0);
   return log;
 }
 
