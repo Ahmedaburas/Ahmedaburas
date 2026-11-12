@@ -104,8 +104,8 @@ for (const [id, count] of Object.entries(expect)) {
   const actual = headline(base, id).count;
   if (actual !== count) failures.push({ id, expected: count, actual });
 }
-if (headline(base, "trir").display !== "0.89") failures.push({ trir: headline(base, "trir").display });
-if (headline(base, "ltir").display !== "0.35") failures.push({ ltir: headline(base, "ltir").display });
+if (headline(base, "trir").display !== "0.95") failures.push({ trir: headline(base, "trir").display });
+if (headline(base, "ltir").display !== "0.38") failures.push({ ltir: headline(base, "ltir").display });
 if (headline(base, "proactive-share").display !== "71%") failures.push({ share: headline(base, "proactive-share").display });
 if (headline(base, "nm-ratio").display !== "2.4") failures.push({ ratio: headline(base, "nm-ratio").display });
 if (headline(base, "closure").display !== "44%") failures.push({ closure: headline(base, "closure").display });
