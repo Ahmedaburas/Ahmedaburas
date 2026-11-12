@@ -98,7 +98,7 @@ export function WeatherAlerts() {
     <>
       <PageHeader
         title="Weather alerts · SOP-59"
-        lede="Email and WhatsApp go out only when wind speed, rain, temperature, or WBGT exceeds an INMA-HSE-SOP-59 threshold."
+        lede="Email and WhatsApp go out for wind and rain at the SOP-59 limits, and for heat only when WBGT reaches 42°C."
       />
       {error ? <Banner>{error}</Banner> : null}
       {message ? <p className="banner info">{message}</p> : null}
@@ -106,14 +106,16 @@ export function WeatherAlerts() {
         <section className="form-card">
           <h2>Auto-notify</h2>
           <p className="lede">
-            When on, a refresh sends an alert only if wind (≥32 km/h), rain (≥2.5 mm/h), temperature (≥33°C), or WBGT
-            (≥28°C) is over its SOP-59 threshold, and only when that set changes. Lightning, humidity, visibility, feels-like,
-            and a return to safe conditions do not send. SMTP and WhatsApp settings come from environment variables on the API host.
+            When on, a refresh sends an alert only if wind is at least 32 km/h, rain is at least 2.5 mm/h, or WBGT is at
+            least 42°C, and only when that set changes. Ambient temperature alone does not send. At WBGT 42–50°C the message
+            uses the Danger row: heavy workload, 50% work / 50% rest, restrict heavy work. Above 50°C it uses the Extreme
+            Danger row: suspend outdoor work. Both require 4–6 cups of water per hour. Lightning, humidity, visibility, and
+            feels-like do not send. SMTP and WhatsApp settings come from environment variables on the API host.
           </p>
           <div className="form-actions">
             <label className="toggle-row">
               <input type="checkbox" checked={settings.autoNotify} onChange={toggleAutoNotify} />
-              <span>Auto-notify when wind, rain, temperature, or WBGT exceeds a threshold</span>
+              <span>Auto-notify when wind, rain, or WBGT of 42°C or higher is exceeded</span>
             </label>
             <button type="button" className="button" onClick={notifyNow}>
               Notify now
@@ -124,8 +126,8 @@ export function WeatherAlerts() {
             <pre className="alert-copy">{alertMessage}</pre>
           ) : (
             <p className="quiet">
-              No safety instruction. Wind, rain, temperature, and WBGT are inside the SOP-59 table, so nothing is sent.
-              When one of those bands is exceeded, the email and WhatsApp text names that reading and the instruction for
+              No safety instruction. Wind and rain are inside their SOP-59 limits, and WBGT is under 42°C, so nothing is sent.
+              When wind, rain, or WBGT of 42°C or higher is exceeded, the message names that reading and the instruction for
               that row.
             </p>
           )}

@@ -187,8 +187,8 @@ const hot = snapshotForTests({
   hasThunder: false,
   weatherCode: 0,
 });
-assert(hot.tiles.find((tile) => tile.id === "wbgt").level === "safe", "this heat case keeps WBGT inside its threshold");
-assert(shouldAutoNotify(alertSignature(calm), hot), "temperature at 34°C should notify");
+assert(hot.raw.wbgt < 42, "34°C air temperature stays under the WBGT notify level");
+assert(!shouldAutoNotify(alertSignature(calm), hot), "ambient temperature alone should not notify");
 
 const windText = formatWeatherAlert(windStop);
 assert(windText.includes("STOP at 48 km/h"), "wind stop instruction uses the SOP-59 table");
@@ -213,42 +213,8 @@ const heavyRain = snapshotForTests({
   hasThunder: false,
 });
 assert(formatWeatherAlert(heavyRain).includes("STOP at heavy rain (7.6 mm/h)"), "heavy rain instruction");
-assert(formatWeatherAlert(hot).includes("CAUTION at 33°C"), "temperature caution instruction");
-const highHeat = snapshotForTests({
-  ...calm.raw,
-  source: "test",
-  condition: "hot",
-  tempC: 41,
-  feelsC: 41,
-  rh: 5,
-  hasThunder: false,
-  weatherCode: 0,
-});
-assert(formatWeatherAlert(highHeat).includes("HIGH at 40°C"), "temperature high instruction");
-const extremeHeat = snapshotForTests({
-  ...calm.raw,
-  source: "test",
-  condition: "extreme",
-  tempC: 46,
-  feelsC: 48,
-  rh: 5,
-  hasThunder: false,
-  weatherCode: 0,
-});
-assert(formatWeatherAlert(extremeHeat).includes("EXTREME at 45°C"), "temperature extreme instruction");
-const wbgtCaution = snapshotForTests({
-  ...calm.raw,
-  source: "test",
-  condition: "humid heat",
-  tempC: 30,
-  feelsC: 32,
-  rh: 50,
-  hasThunder: false,
-  weatherCode: 0,
-});
-assert(wbgtCaution.tiles.find((tile) => tile.id === "temperature").level === "ok", "WBGT caution case keeps air temperature inside its band");
-assert(formatWeatherAlert(wbgtCaution).includes("CAUTION at 28°C"), "WBGT caution instruction");
-const wbgtStop = snapshotForTests({
+assert(!formatWeatherAlert(hot).includes("33°C"), "a hot-air reading under WBGT 42 adds no heat instruction");
+const underHeatAlert = snapshotForTests({
   ...calm.raw,
   source: "test",
   condition: "heat stress",
@@ -258,8 +224,42 @@ const wbgtStop = snapshotForTests({
   hasThunder: false,
   weatherCode: 0,
 });
-assert(wbgtStop.tiles.find((tile) => tile.id === "wbgt").level === "stop", "WBGT stop case");
-assert(formatWeatherAlert(wbgtStop).includes("STOP at 35°C"), "WBGT stop instruction");
+assert(underHeatAlert.raw.wbgt < 42, "WBGT under 42 stays quiet even if the dashboard band is elevated");
+assert(!shouldAutoNotify(alertSignature(calm), underHeatAlert), "WBGT under 42 should not notify");
+const heatDanger = snapshotForTests({
+  ...calm.raw,
+  source: "test",
+  condition: "danger heat",
+  tempC: 42,
+  feelsC: 46,
+  rh: 50,
+  hasThunder: false,
+  weatherCode: 0,
+});
+assert(heatDanger.raw.wbgt >= 42 && heatDanger.raw.wbgt <= 50, "this case sits in the Danger WBGT band");
+assert(shouldAutoNotify(alertSignature(calm), heatDanger), "WBGT of 42°C or higher should notify");
+const dangerText = formatWeatherAlert(heatDanger);
+assert(dangerText.includes("Danger, WBGT 42–50°C"), "Danger row is named");
+assert(dangerText.includes("50% work / 50% rest"), "Danger work/rest cycle is included");
+assert(dangerText.includes("Restrict heavy work"), "Danger action is included");
+assert(dangerText.includes("4–6 cups per hour"), "mandatory water intake is included");
+assert(!dangerText.includes("CAUTION at 33°C"), "ambient temperature does not add its own instruction");
+const heatExtreme = snapshotForTests({
+  ...calm.raw,
+  source: "test",
+  condition: "extreme danger heat",
+  tempC: 45,
+  feelsC: 50,
+  rh: 70,
+  hasThunder: false,
+  weatherCode: 0,
+});
+assert(heatExtreme.raw.wbgt > 50, "this case sits above 50°C WBGT");
+assert(shouldAutoNotify(alertSignature(heatDanger), heatExtreme), "moving from Danger to Extreme Danger should notify");
+const extremeText = formatWeatherAlert(heatExtreme);
+assert(extremeText.includes("Extreme Danger, WBGT above 50°C"), "Extreme Danger row is named");
+assert(extremeText.includes("25% work / 75% rest"), "Extreme Danger work/rest cycle is included");
+assert(extremeText.includes("Suspend outdoor work"), "Extreme Danger action is included");
 const both = snapshotForTests({
   ...calm.raw,
   source: "test",
@@ -317,7 +317,7 @@ db.prepare("UPDATE weather_settings SET auto_notify = 1").run();
 const inside = await weatherAdmin.getWeather(db, { force: true });
 assert(inside.notified === false, "lightning, humidity, and light rain should not send an alert");
 const blocked = await weatherAdmin.notifyNow(db, {});
-assert(blocked.sent === false, "manual notify should stay quiet inside wind, rain, temperature, and WBGT thresholds");
+assert(blocked.sent === false, "manual notify should stay quiet inside wind, rain, and the WBGT 42°C level");
 delete process.env.HSE_WEATHER_FIXTURE;
 
 if (failures.length) {

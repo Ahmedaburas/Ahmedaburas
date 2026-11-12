@@ -163,7 +163,7 @@ export async function notifyNow(db, { groupIds = [] } = {}) {
   if (!exceeded.length) {
     return {
       sent: false,
-      reason: "No alert sent. Wind, rain, temperature, and WBGT are inside SOP-59 thresholds.",
+      reason: "No alert sent. Wind and rain are inside their SOP-59 limits, and WBGT is under 42°C.",
       log: [],
     };
   }

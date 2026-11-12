@@ -1,4 +1,4 @@
-import { alertSignature, exceededNotifyMetrics, notifyMetrics } from "./weather.js";
+import { alertSignature, exceededNotifyMetrics, heatNotifyBand, notifyMetrics } from "./weather.js";
 
 function riyadhTime(iso) {
   return new Intl.DateTimeFormat("en-GB", {
@@ -21,26 +21,30 @@ const BAND_INSTRUCTION = {
     stop: (tile) =>
       `${tile.label} is ${tile.display}. SOP-59 table: STOP at heavy rain (7.6 mm/h). Stop outdoor work now. Keep the crews under cover until the rain is below 7.6 mm/h.`,
   },
-  temperature: {
-    caution: (tile) =>
-      `${tile.label} is ${tile.display}. SOP-59 table: CAUTION at 33°C, HIGH at 40°C, EXTREME at 45°C. Use caution for heat. Provide drinking water, shade, and rest breaks. Watch for heat illness. Restrict outdoor work if the temperature reaches 40°C.`,
-    high: (tile) =>
-      `${tile.label} is ${tile.display}. SOP-59 table: HIGH at 40°C, EXTREME at 45°C. High heat risk. Shorten outdoor work, increase rest in the shade, and provide drinking water. Stop heavy outdoor tasks. Stop outdoor work if the temperature reaches 45°C.`,
-    extreme: (tile) =>
-      `${tile.label} is ${tile.display}. SOP-59 table: EXTREME at 45°C. Stop outdoor work for extreme heat. Move the crews to shade or a cooled area and watch for heat illness.`,
-  },
-  wbgt: {
-    caution: (tile) =>
-      `${tile.label} is ${tile.display}. SOP-59 table: CAUTION at 28°C, HIGH at 33°C, STOP at 35°C. Use caution for heat stress. Provide drinking water, shade, and scheduled rest, and use a buddy check. Restrict outdoor work if WBGT reaches 33°C.`,
-    high: (tile) =>
-      `${tile.label} is ${tile.display}. SOP-59 table: HIGH at 33°C, STOP at 35°C. High heat-stress risk. Cut outdoor work periods, enforce rest in the shade, and provide drinking water. Stop outdoor work if WBGT reaches 35°C.`,
-    stop: (tile) =>
-      `${tile.label} is ${tile.display}. SOP-59 table: STOP at 35°C. Stop outdoor work for heat stress. Move the crews to shade or a cooled area and watch for heat illness.`,
-  },
 };
+
+function wbgtInstruction(snapshot) {
+  const wbgt = Number(snapshot.raw?.wbgt);
+  const reading = `WBGT is ${wbgt.toFixed(1)}°C`;
+  const water = "Water intake: 4–6 cups per hour, mandatory.";
+  if (heatNotifyBand(wbgt) === "extreme_danger") {
+    return `${reading}. Heat stress table 3.4: Extreme Danger, WBGT above 50°C. Workload: All. Work/rest cycle: 25% work / 75% rest, or stop. Suspend outdoor work. ${water} Reference: OSHA Heat Stress Guidelines / ACGIH TLV.`;
+  }
+  return `${reading}. Heat stress table 3.4: Danger, WBGT 42–50°C. Workload: Heavy. Work/rest cycle: 50% work / 50% rest. Restrict heavy work. ${water} Reference: OSHA Heat Stress Guidelines / ACGIH TLV.`;
+}
 
 export function safetyInstructions(snapshot) {
   return exceededNotifyMetrics(snapshot).map((tile) => {
+    if (tile.id === "wbgt") {
+      const band = heatNotifyBand(snapshot.raw?.wbgt);
+      return {
+        id: tile.id,
+        label: tile.label,
+        display: `${Number(snapshot.raw.wbgt).toFixed(1)}°C`,
+        status: band === "extreme_danger" ? "EXTREME DANGER" : "DANGER",
+        text: wbgtInstruction(snapshot),
+      };
+    }
     const write = BAND_INSTRUCTION[tile.id]?.[tile.level];
     return {
       id: tile.id,
@@ -66,7 +70,13 @@ export function formatWeatherAlert(snapshot) {
     ...instructions.map((item, index) => `${index + 1}. ${item.text}`),
     "",
     "Readings used for this alert:",
-    ...notifyMetrics(snapshot).map((tile) => `- ${tile.label}: ${tile.display} — ${tile.status}`),
+    ...notifyMetrics(snapshot).map((tile) => {
+      if (tile.id !== "wbgt") return `- ${tile.label}: ${tile.display} — ${tile.status}`;
+      const band = heatNotifyBand(snapshot.raw?.wbgt);
+      const value = snapshot.raw?.wbgt == null ? tile.display : `${Number(snapshot.raw.wbgt).toFixed(1)}°C`;
+      const status = band === "extreme_danger" ? "EXTREME DANGER" : band === "danger" ? "DANGER" : "under 42°C";
+      return `- ${tile.label}: ${value} — ${status}`;
+    }),
   ];
   return lines.join("\n");
 }
@@ -152,7 +162,10 @@ export async function deliverToContacts(db, snapshot, { prevLevel, manual = fals
   const exceeded = exceededNotifyMetrics(snapshot);
   const subject = `SOP-59 exceeded: ${exceeded.map((tile) => tile.label).join(", ") || snapshot.location}`;
   const text = formatWeatherAlert(snapshot);
-  const newLevel = exceeded.map((tile) => `${tile.label} ${tile.status}`).join(", ") || snapshot.overall.level;
+  const newLevel =
+    safetyInstructions(snapshot)
+      .map((item) => `${item.label} ${item.status}`)
+      .join(", ") || snapshot.overall.level;
   const log = [];
   for (const contact of contacts) {
     if (contact.notify_email && contact.email) {

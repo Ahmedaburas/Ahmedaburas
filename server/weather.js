@@ -36,13 +36,27 @@ export function notifyMetrics(snapshot) {
   return NOTIFY_METRIC_IDS.map((id) => snapshot.tiles.find((tile) => tile.id === id)).filter(Boolean);
 }
 
+export function heatNotifyBand(wbgt) {
+  if (wbgt == null || Number.isNaN(Number(wbgt))) return null;
+  if (wbgt > 50) return "extreme_danger";
+  if (wbgt >= 42) return "danger";
+  return null;
+}
+
 export function exceededNotifyMetrics(snapshot) {
-  return notifyMetrics(snapshot).filter((tile) => isActionLevel(tile.level));
+  const heat = heatNotifyBand(snapshot.raw?.wbgt);
+  return notifyMetrics(snapshot).filter((tile) => {
+    if (tile.id === "temperature") return false;
+    if (tile.id === "wbgt") return Boolean(heat);
+    return isActionLevel(tile.level);
+  });
 }
 
 export function alertSignature(snapshot) {
+  const heat = heatNotifyBand(snapshot.raw?.wbgt) || "inside";
   return notifyMetrics(snapshot)
     .map((tile) => `${tile.id}:${tile.level}`)
+    .concat(`heat:${heat}`)
     .join("|");
 }
 
