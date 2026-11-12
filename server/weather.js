@@ -26,6 +26,26 @@ export function levelRank(level) {
   return LEVEL_RANK[level] ?? 0;
 }
 
+export const NOTIFY_METRIC_IDS = ["wind", "rain", "temperature", "wbgt"];
+
+export function isActionLevel(level) {
+  return levelRank(level) >= LEVEL_RANK.warn;
+}
+
+export function notifyMetrics(snapshot) {
+  return NOTIFY_METRIC_IDS.map((id) => snapshot.tiles.find((tile) => tile.id === id)).filter(Boolean);
+}
+
+export function exceededNotifyMetrics(snapshot) {
+  return notifyMetrics(snapshot).filter((tile) => isActionLevel(tile.level));
+}
+
+export function alertSignature(snapshot) {
+  return notifyMetrics(snapshot)
+    .map((tile) => `${tile.id}:${tile.level}`)
+    .join("|");
+}
+
 export function worstLevel(levels) {
   let winner = "safe";
   for (const level of levels) {
@@ -56,7 +76,6 @@ export function scoreRain(mmPerHour, weatherCode, hasThunder) {
   if (rate >= 2.5) return "warn";
   if (weatherCode === 65 || weatherCode === 66 || weatherCode === 67 || weatherCode === 82) return "stop";
   if (weatherCode === 63 || weatherCode === 81) return "warn";
-  if (rate > 0.1) return "warn";
   return "safe";
 }
 

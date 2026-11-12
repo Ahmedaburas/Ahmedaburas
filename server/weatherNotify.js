@@ -1,4 +1,4 @@
-import { levelRank } from "./weather.js";
+import { alertSignature, exceededNotifyMetrics, notifyMetrics } from "./weather.js";
 
 function riyadhTime(iso) {
   return new Intl.DateTimeFormat("en-GB", {
@@ -8,17 +8,16 @@ function riyadhTime(iso) {
   }).format(new Date(iso));
 }
 
-export function formatWeatherAlert(snapshot, prevLevel, newLevel) {
+export function formatWeatherAlert(snapshot) {
+  const exceeded = exceededNotifyMetrics(snapshot);
   const lines = [
     `Inma Steel · SOP-59 weather alert`,
     `Location: ${snapshot.location}`,
-    `Overall: ${snapshot.overall.label} (was ${prevLevel || "unknown"})`,
+    `Exceeded: ${exceeded.map((tile) => `${tile.label} ${tile.display} (${tile.status})`).join("; ") || "none"}`,
     `Conditions: ${snapshot.condition}`,
     `Time (Riyadh): ${riyadhTime(snapshot.fetchedAt)}`,
     "",
-    ...snapshot.tiles
-      .filter((t) => t.level !== "reference")
-      .map((t) => `${t.label}: ${t.display} — ${t.status}`),
+    ...notifyMetrics(snapshot).map((tile) => `${tile.label}: ${tile.display} — ${tile.status}`),
   ];
   return lines.join("\n");
 }
@@ -90,7 +89,7 @@ export async function sendWebhook(text) {
   }
 }
 
-export async function deliverToContacts(db, snapshot, { prevLevel, newLevel, manual = false, contactIds = null } = {}) {
+export async function deliverToContacts(db, snapshot, { prevLevel, manual = false, contactIds = null } = {}) {
   let contacts = db
     .prepare(
       `SELECT id, name, email, whatsapp, notify_email, notify_whatsapp
@@ -101,8 +100,10 @@ export async function deliverToContacts(db, snapshot, { prevLevel, newLevel, man
     const allowed = new Set(contactIds.map(Number));
     contacts = contacts.filter((row) => allowed.has(row.id));
   }
-  const subject = `SOP-59 ${snapshot.overall.label}: ${snapshot.location}`;
-  const text = formatWeatherAlert(snapshot, prevLevel, newLevel);
+  const exceeded = exceededNotifyMetrics(snapshot);
+  const subject = `SOP-59 exceeded: ${exceeded.map((tile) => tile.label).join(", ") || snapshot.location}`;
+  const text = formatWeatherAlert(snapshot);
+  const newLevel = exceeded.map((tile) => `${tile.label} ${tile.status}`).join(", ") || snapshot.overall.level;
   const log = [];
   for (const contact of contacts) {
     if (contact.notify_email && contact.email) {
@@ -129,7 +130,8 @@ export async function deliverToContacts(db, snapshot, { prevLevel, newLevel, man
   return log;
 }
 
-export function shouldAutoNotify(prevLevel, newLevel) {
-  if (!prevLevel) return false;
-  return levelRank(newLevel) !== levelRank(prevLevel);
+export function shouldAutoNotify(prevSignature, snapshot) {
+  if (!exceededNotifyMetrics(snapshot).length) return false;
+  if (!prevSignature) return true;
+  return alertSignature(snapshot) !== prevSignature;
 }

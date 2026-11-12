@@ -45,7 +45,11 @@ export function WeatherAlerts() {
 
   async function notifyNow() {
     const result = await api.post("/api/weather/notify", {});
-    setMessage(`Notify now completed (${result.log?.length || 0} delivery attempts).`);
+    setMessage(
+      result.sent
+        ? `Notify now completed (${result.log?.length || 0} delivery attempts).`
+        : result.reason,
+    );
     reload();
   }
 
@@ -91,7 +95,7 @@ export function WeatherAlerts() {
     <>
       <PageHeader
         title="Weather alerts · SOP-59"
-        lede="Email and WhatsApp notifications when outdoor-work weather levels change. Thresholds follow INMA-HSE-SOP-59 (adverse weather)."
+        lede="Email and WhatsApp go out only when wind speed, rain, temperature, or WBGT exceeds an INMA-HSE-SOP-59 threshold."
       />
       {error ? <Banner>{error}</Banner> : null}
       {message ? <p className="banner info">{message}</p> : null}
@@ -99,13 +103,14 @@ export function WeatherAlerts() {
         <section className="form-card">
           <h2>Auto-notify</h2>
           <p className="lede">
-            When on, the server sends alerts only when the overall SOP-59 level changes (typically every five minutes when
-            conditions are refreshed). SMTP and WhatsApp settings come from environment variables on the API host.
+            When on, a refresh sends an alert only if wind (≥32 km/h), rain (≥2.5 mm/h), temperature (≥33°C), or WBGT
+            (≥28°C) is over its SOP-59 threshold, and only when that set changes. Lightning, humidity, visibility, feels-like,
+            and a return to safe conditions do not send. SMTP and WhatsApp settings come from environment variables on the API host.
           </p>
           <div className="form-actions">
             <label className="toggle-row">
               <input type="checkbox" checked={settings.autoNotify} onChange={toggleAutoNotify} />
-              <span>Auto-notify on level change</span>
+              <span>Auto-notify when wind, rain, temperature, or WBGT exceeds a threshold</span>
             </label>
             <button type="button" className="button" onClick={notifyNow}>
               Notify now

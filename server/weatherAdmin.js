@@ -1,5 +1,5 @@
 import { deliverToContacts, shouldAutoNotify } from "./weatherNotify.js";
-import { getCachedWeather, refreshWeatherReading } from "./weather.js";
+import { alertSignature, exceededNotifyMetrics, getCachedWeather, refreshWeatherReading } from "./weather.js";
 
 function rowToContact(row) {
   return {
@@ -15,15 +15,18 @@ function rowToContact(row) {
 }
 
 export function getSettings(db) {
-  const row = db.prepare("SELECT auto_notify, last_overall_level, last_fetched_at FROM weather_settings WHERE id = 1").get();
+  const row = db
+    .prepare("SELECT auto_notify, last_overall_level, last_fetched_at, last_alert_signature FROM weather_settings WHERE id = 1")
+    .get();
   if (!row) {
     db.prepare("INSERT INTO weather_settings (id, auto_notify) VALUES (1, 1)").run();
-    return { autoNotify: true, lastOverallLevel: null, lastFetchedAt: null };
+    return { autoNotify: true, lastOverallLevel: null, lastFetchedAt: null, lastAlertSignature: null };
   }
   return {
     autoNotify: Boolean(row.auto_notify),
     lastOverallLevel: row.last_overall_level,
     lastFetchedAt: row.last_fetched_at,
+    lastAlertSignature: row.last_alert_signature,
   };
 }
 
@@ -125,18 +128,16 @@ export async function getWeather(db, { force = false } = {}) {
   const settings = getSettings(db);
   let notified = false;
   if (refreshed) {
-    const newLevel = snapshot.overall.level;
-    const prevLevel = settings.lastOverallLevel;
-    if (shouldAutoNotify(prevLevel, newLevel) && settings.autoNotify) {
-      await deliverToContacts(db, snapshot, { prevLevel, newLevel, manual: false });
+    const signature = alertSignature(snapshot);
+    if (settings.autoNotify && shouldAutoNotify(settings.lastAlertSignature, snapshot)) {
+      await deliverToContacts(db, snapshot, { prevLevel: settings.lastAlertSignature, manual: false });
       notified = true;
     }
-    db.prepare("UPDATE weather_settings SET last_overall_level = ?, last_fetched_at = ? WHERE id = 1").run(
-      newLevel,
-      snapshot.fetchedAt,
-    );
+    db.prepare(
+      "UPDATE weather_settings SET last_overall_level = ?, last_fetched_at = ?, last_alert_signature = ? WHERE id = 1",
+    ).run(snapshot.overall.level, snapshot.fetchedAt, signature);
   }
-  return { ...snapshot, settings: getSettings(db), notified };
+  return { ...snapshot, settings: getSettings(db), notified, exceeded: exceededNotifyMetrics(snapshot) };
 }
 
 export async function notifyNow(db, { groupIds = [] } = {}) {
@@ -151,13 +152,20 @@ export async function notifyNow(db, { groupIds = [] } = {}) {
     }
     contactIds = [...ids];
   }
+  const exceeded = exceededNotifyMetrics(snapshot);
+  if (!exceeded.length) {
+    return {
+      sent: false,
+      reason: "No alert sent. Wind, rain, temperature, and WBGT are inside SOP-59 thresholds.",
+      log: [],
+    };
+  }
   const log = await deliverToContacts(db, snapshot, {
-    prevLevel: settings.lastOverallLevel,
-    newLevel: snapshot.overall.level,
+    prevLevel: settings.lastAlertSignature,
     manual: true,
     contactIds,
   });
-  return { snapshot, log };
+  return { sent: true, snapshot, log };
 }
 
 export function startWeatherPoller(db) {

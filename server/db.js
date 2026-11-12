@@ -222,7 +222,8 @@ CREATE TABLE IF NOT EXISTS weather_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   auto_notify INTEGER NOT NULL DEFAULT 1,
   last_overall_level TEXT,
-  last_fetched_at TEXT
+  last_fetched_at TEXT,
+  last_alert_signature TEXT
 );
 CREATE TABLE IF NOT EXISTS weather_notifications (
   id INTEGER PRIMARY KEY,
@@ -236,6 +237,10 @@ CREATE TABLE IF NOT EXISTS weather_notifications (
 `;
 
 function ensureWeatherSettings(db) {
+  const columns = db.prepare("PRAGMA table_info(weather_settings)").all();
+  if (!columns.some((column) => column.name === "last_alert_signature")) {
+    db.exec("ALTER TABLE weather_settings ADD COLUMN last_alert_signature TEXT");
+  }
   const row = db.prepare("SELECT id FROM weather_settings WHERE id = 1").get();
   if (!row) db.prepare("INSERT INTO weather_settings (id, auto_notify) VALUES (1, 1)").run();
 }

@@ -3,7 +3,9 @@ import { openDatabase } from "./db.js";
 import { buildKpis } from "./kpi.js";
 import { createNearMiss, listActions, listAudits, listFindings, listIncidents, listJsas, listNearMisses, listPermits, listRisks, transition } from "./records.js";
 import {
+  alertSignature,
   scoreHumidity,
+  scoreRain,
   scoreVisibility,
   scoreWindKmh,
   scoreWbgt,
@@ -145,6 +147,8 @@ assert(scoreWindKmh(35) === "warn", "wind warn threshold");
 assert(scoreWbgt(34) === "high", "wbgt high threshold");
 assert(scoreVisibility(150) === "stop", "visibility stop threshold");
 assert(scoreHumidity(80) === "warn", "humidity warn threshold");
+assert(scoreRain(1.2, 61, false) === "safe", "light rain stays inside the SOP-59 threshold");
+assert(scoreRain(2.5, 63, false) === "warn", "moderate rain exceeds the SOP-59 threshold");
 const calm = snapshotForTests({
   source: "test",
   condition: "clear",
@@ -159,8 +163,32 @@ const calm = snapshotForTests({
   hasThunder: false,
 });
 assert(calm.tiles.find((tile) => tile.id === "pressure").level === "reference", "pressure is reference only");
-assert(!shouldAutoNotify(null, "safe"), "baseline should not notify");
-assert(shouldAutoNotify("safe", "warn"), "level change should notify");
+assert(!shouldAutoNotify(null, calm), "safe conditions should not notify");
+const windStop = snapshotForTests({ ...calm.raw, source: "test", condition: "wind", windKmh: 50, hasThunder: false, weatherCode: 0 });
+assert(shouldAutoNotify(null, windStop), "wind over 48 km/h should notify");
+assert(!shouldAutoNotify(alertSignature(windStop), windStop), "the same wind exceedance should not repeat");
+assert(!shouldAutoNotify(alertSignature(windStop), calm), "returning inside the thresholds should not notify");
+const humid = snapshotForTests({
+  ...calm.raw,
+  source: "test",
+  condition: "humid",
+  rh: 96,
+  hasThunder: false,
+  weatherCode: 0,
+});
+assert(!shouldAutoNotify(alertSignature(calm), humid), "humidity alone should not notify");
+const hot = snapshotForTests({
+  ...calm.raw,
+  source: "test",
+  condition: "hot",
+  tempC: 34,
+  feelsC: 34,
+  rh: 10,
+  hasThunder: false,
+  weatherCode: 0,
+});
+assert(hot.tiles.find((tile) => tile.id === "wbgt").level === "safe", "this heat case keeps WBGT inside its threshold");
+assert(shouldAutoNotify(alertSignature(calm), hot), "temperature at 34°C should notify");
 
 const notifyBefore = weatherAdmin.listNotifications(db).length;
 db.prepare("UPDATE weather_settings SET auto_notify = 0, last_overall_level = ?").run("safe");
@@ -188,7 +216,27 @@ weatherAdmin.createContact(db, {
   notifyEmail: true,
 });
 const manual = await weatherAdmin.notifyNow(db, {});
-assert(manual.log.length >= 1, "manual notify should attempt delivery");
+assert(manual.sent === true && manual.log.length >= 1, "manual notify should send when wind exceeds 48 km/h");
+process.env.HSE_WEATHER_FIXTURE = JSON.stringify({
+  source: "fixture",
+  condition: "clear",
+  fetchedAt: new Date().toISOString(),
+  windKmh: 10,
+  rainMmH: 1,
+  tempC: 22,
+  feelsC: 22,
+  rh: 96,
+  pressureHpa: 1010,
+  visibilityM: 100,
+  weatherCode: 61,
+  hasThunder: true,
+});
+db.prepare("UPDATE weather_settings SET auto_notify = 1").run();
+const inside = await weatherAdmin.getWeather(db, { force: true });
+assert(inside.notified === false, "lightning, humidity, and light rain should not send an alert");
+const blocked = await weatherAdmin.notifyNow(db, {});
+assert(blocked.sent === false, "manual notify should stay quiet inside wind, rain, temperature, and WBGT thresholds");
+delete process.env.HSE_WEATHER_FIXTURE;
 
 if (failures.length) {
   console.error(JSON.stringify(failures, null, 2));
