@@ -7,6 +7,7 @@ import { Browse } from "./pages/Browse.jsx";
 import { CreateForm } from "./pages/Create.jsx";
 import { Dashboard } from "./pages/Dashboard.jsx";
 import { Directory } from "./pages/Directory.jsx";
+import { WeatherAlerts } from "./pages/WeatherAlerts.jsx";
 import { RecordView } from "./pages/Record.jsx";
 import { PageHeader } from "./ui.jsx";
 
@@ -99,6 +100,7 @@ export function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
+          <Route path="weather" element={<WeatherAlerts />} />
           <Route path="directory" element={<Directory />} />
           {Object.entries(MODULES).flatMap(([key, module]) => {
             const base = module.path.slice(1);

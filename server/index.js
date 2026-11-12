@@ -13,6 +13,7 @@ import {
 } from "./domain.js";
 import { buildKpis } from "./kpi.js";
 import * as records from "./records.js";
+import * as weatherAdmin from "./weatherAdmin.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = path.join(root, "dist");
@@ -66,6 +67,95 @@ app.get(
   "/api/kpis",
   route((req, res) => {
     res.json(buildKpis(db, req.query));
+  }),
+);
+
+app.get(
+  "/api/weather",
+  route(async (req, res) => {
+    const force = req.query.force === "1" || req.query.force === "true";
+    res.json(await weatherAdmin.getWeather(db, { force }));
+  }),
+);
+
+app.get(
+  "/api/weather/settings",
+  route((_req, res) => {
+    res.json(weatherAdmin.getSettings(db));
+  }),
+);
+
+app.put(
+  "/api/weather/settings",
+  route((req, res) => {
+    res.json(weatherAdmin.updateSettings(db, req.body || {}));
+  }),
+);
+
+app.get(
+  "/api/weather/contacts",
+  route((_req, res) => {
+    sendList(res, weatherAdmin.listContacts(db));
+  }),
+);
+
+app.post(
+  "/api/weather/contacts",
+  route((req, res) => {
+    try {
+      res.status(201).json(weatherAdmin.createContact(db, req.body || {}));
+    } catch (error) {
+      throw new HttpError(400, error.message);
+    }
+  }),
+);
+
+app.delete(
+  "/api/weather/contacts/:id",
+  route((req, res) => {
+    weatherAdmin.deleteContact(db, idOf(req));
+    res.status(204).end();
+  }),
+);
+
+app.get(
+  "/api/weather/groups",
+  route((_req, res) => {
+    sendList(res, weatherAdmin.listGroups(db));
+  }),
+);
+
+app.post(
+  "/api/weather/groups",
+  route((req, res) => {
+    try {
+      res.status(201).json(weatherAdmin.createGroup(db, req.body || {}));
+    } catch (error) {
+      throw new HttpError(400, error.message);
+    }
+  }),
+);
+
+app.delete(
+  "/api/weather/groups/:id",
+  route((req, res) => {
+    weatherAdmin.deleteGroup(db, idOf(req));
+    res.status(204).end();
+  }),
+);
+
+app.post(
+  "/api/weather/notify",
+  route(async (req, res) => {
+    const groupIds = Array.isArray(req.body?.groupIds) ? req.body.groupIds.map(Number) : [];
+    res.json(await weatherAdmin.notifyNow(db, { groupIds }));
+  }),
+);
+
+app.get(
+  "/api/weather/notifications",
+  route((req, res) => {
+    sendList(res, weatherAdmin.listNotifications(db, Number(req.query.limit) || 20));
   }),
 );
 
@@ -151,6 +241,7 @@ const port = Number(process.env.PORT) || 3001;
 const host = process.env.HOST || "127.0.0.1";
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  weatherAdmin.startWeatherPoller(db);
   app.listen(port, host, () => {
     console.log(`HSE platform API on http://${host}:${port}`);
   });

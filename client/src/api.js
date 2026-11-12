@@ -36,6 +36,7 @@ export async function request(url, options = {}) {
 export const api = {
   get: (url) => request(url),
   post: (url, body) => request(url, { method: "POST", body: JSON.stringify(body) }),
+  put: (url, body) => request(url, { method: "PUT", body: JSON.stringify(body) }),
 };
 
 export function useFetch(url) {

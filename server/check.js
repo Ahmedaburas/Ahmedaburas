@@ -2,6 +2,15 @@ import { filterFromQuery } from "./domain.js";
 import { openDatabase } from "./db.js";
 import { buildKpis } from "./kpi.js";
 import { createNearMiss, listActions, listAudits, listFindings, listIncidents, listJsas, listNearMisses, listPermits, listRisks, transition } from "./records.js";
+import {
+  scoreHumidity,
+  scoreVisibility,
+  scoreWindKmh,
+  scoreWbgt,
+  snapshotForTests,
+} from "./weather.js";
+import * as weatherAdmin from "./weatherAdmin.js";
+import { shouldAutoNotify } from "./weatherNotify.js";
 
 process.env.HSE_DB = process.env.HSE_DB || ":memory:";
 
@@ -131,8 +140,58 @@ assert(moved.events.length === 2, "timeline missing the status move");
 const after = buildKpis(db, {});
 assert(headline(after, "near-misses").count === 23, "new near miss did not reach the dashboard");
 
+assert(scoreWindKmh(50) === "stop", "wind stop threshold");
+assert(scoreWindKmh(35) === "warn", "wind warn threshold");
+assert(scoreWbgt(34) === "high", "wbgt high threshold");
+assert(scoreVisibility(150) === "stop", "visibility stop threshold");
+assert(scoreHumidity(80) === "warn", "humidity warn threshold");
+const calm = snapshotForTests({
+  source: "test",
+  condition: "clear",
+  windKmh: 10,
+  rainMmH: 0,
+  tempC: 22,
+  feelsC: 22,
+  rh: 50,
+  pressureHpa: 1020,
+  visibilityM: 10000,
+  weatherCode: 0,
+  hasThunder: false,
+});
+assert(calm.tiles.find((tile) => tile.id === "pressure").level === "reference", "pressure is reference only");
+assert(!shouldAutoNotify(null, "safe"), "baseline should not notify");
+assert(shouldAutoNotify("safe", "warn"), "level change should notify");
+
+const notifyBefore = weatherAdmin.listNotifications(db).length;
+db.prepare("UPDATE weather_settings SET auto_notify = 0, last_overall_level = ?").run("safe");
+process.env.HSE_WEATHER_FIXTURE = JSON.stringify({
+  source: "fixture",
+  condition: "wind",
+  fetchedAt: new Date().toISOString(),
+  windKmh: 50,
+  rainMmH: 0,
+  tempC: 22,
+  feelsC: 22,
+  rh: 50,
+  pressureHpa: 1015,
+  visibilityM: 10000,
+  weatherCode: 0,
+  hasThunder: false,
+});
+await weatherAdmin.getWeather(db, { force: true });
+const notifyAfter = weatherAdmin.listNotifications(db).length;
+assert(notifyBefore === notifyAfter, "auto-notify off should not log sends");
+delete process.env.HSE_WEATHER_FIXTURE;
+weatherAdmin.createContact(db, {
+  name: "Weather check",
+  email: "weather-check@example.com",
+  notifyEmail: true,
+});
+const manual = await weatherAdmin.notifyNow(db, {});
+assert(manual.log.length >= 1, "manual notify should attempt delivery");
+
 if (failures.length) {
   console.error(JSON.stringify(failures, null, 2));
   process.exit(1);
 }
-console.log("KPI links match the lists, and a created near miss moves status.");
+console.log("KPI links match the lists, weather SOP-59 checks pass, and a created near miss moves status.");

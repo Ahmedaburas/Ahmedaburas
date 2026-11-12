@@ -198,7 +198,47 @@ CREATE INDEX IF NOT EXISTS idx_nm_occurred ON near_misses(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_inc_occurred ON incidents(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status, due_date);
 CREATE INDEX IF NOT EXISTS idx_events ON status_events(entity_type, entity_id);
+CREATE TABLE IF NOT EXISTS weather_contacts (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  person_id INTEGER REFERENCES people(id),
+  email TEXT NOT NULL DEFAULT '',
+  whatsapp TEXT NOT NULL DEFAULT '',
+  notify_email INTEGER NOT NULL DEFAULT 1,
+  notify_whatsapp INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS weather_groups (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS weather_group_members (
+  group_id INTEGER NOT NULL REFERENCES weather_groups(id) ON DELETE CASCADE,
+  contact_id INTEGER NOT NULL REFERENCES weather_contacts(id) ON DELETE CASCADE,
+  PRIMARY KEY (group_id, contact_id)
+);
+CREATE TABLE IF NOT EXISTS weather_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  auto_notify INTEGER NOT NULL DEFAULT 1,
+  last_overall_level TEXT,
+  last_fetched_at TEXT
+);
+CREATE TABLE IF NOT EXISTS weather_notifications (
+  id INTEGER PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  prev_level TEXT,
+  new_level TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  delivery_log TEXT NOT NULL,
+  manual INTEGER NOT NULL DEFAULT 0
+);
 `;
+
+function ensureWeatherSettings(db) {
+  const row = db.prepare("SELECT id FROM weather_settings WHERE id = 1").get();
+  if (!row) db.prepare("INSERT INTO weather_settings (id, auto_notify) VALUES (1, 1)").run();
+}
 
 export function openDatabase() {
   const configured = process.env.HSE_DB;
@@ -208,6 +248,7 @@ export function openDatabase() {
   db.exec("PRAGMA foreign_keys = ON");
   db.exec("PRAGMA journal_mode = WAL");
   db.exec(SCHEMA);
+  ensureWeatherSettings(db);
   const count = db.prepare("SELECT COUNT(*) AS n FROM sites").get().n;
   if (count === 0) seed(db);
   return db;

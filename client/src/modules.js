@@ -2,6 +2,7 @@ import { enumLabel, statusLabel } from "./format.js";
 
 export const NAV = [
   { to: "/", label: "Dashboard", end: true },
+  { to: "/weather", label: "Weather alerts" },
   { to: "/near-misses", label: "Near misses" },
   { to: "/incidents", label: "Incidents" },
   { to: "/audits", label: "Audits" },

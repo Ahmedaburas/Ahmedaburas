@@ -2,6 +2,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useFetch } from "../api.js";
 import { formatDate } from "../format.js";
 import { useMeta } from "../meta.js";
+import { WeatherStrip } from "../WeatherStrip.jsx";
 import { Banner, PageHeader } from "../ui.jsx";
 
 function setParam(params, setParams, key, value) {
@@ -167,6 +168,7 @@ export function Dashboard() {
         title="Inma Steel · Safety performance"
         lede="Live counts from near misses, incidents, audits, permits, job safety analyses, and risk assessments. Every number opens the records it counts."
       />
+      <WeatherStrip />
       <div className="filters">
         <label>
           <span>Site</span>
