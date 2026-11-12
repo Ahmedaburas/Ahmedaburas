@@ -1,3 +1,4 @@
+import { HttpError } from "./domain.js";
 import { deliverToContacts, formatWeatherAlert, shouldAutoNotify } from "./weatherNotify.js";
 import { alertSignature, exceededNotifyMetrics, getCachedWeather, refreshWeatherReading } from "./weather.js";
 
@@ -16,24 +17,65 @@ function rowToContact(row) {
 
 export function getSettings(db) {
   const row = db
-    .prepare("SELECT auto_notify, last_overall_level, last_fetched_at, last_alert_signature FROM weather_settings WHERE id = 1")
+    .prepare(
+      `SELECT auto_notify, last_overall_level, last_fetched_at, last_alert_signature,
+              whatsapp_group_name, whatsapp_group_webhook
+       FROM weather_settings WHERE id = 1`,
+    )
     .get();
   if (!row) {
     db.prepare("INSERT INTO weather_settings (id, auto_notify) VALUES (1, 1)").run();
-    return { autoNotify: true, lastOverallLevel: null, lastFetchedAt: null, lastAlertSignature: null };
+    return {
+      autoNotify: true,
+      lastOverallLevel: null,
+      lastFetchedAt: null,
+      lastAlertSignature: null,
+      whatsappGroupName: "",
+      whatsappGroupWebhook: "",
+    };
   }
   return {
     autoNotify: Boolean(row.auto_notify),
     lastOverallLevel: row.last_overall_level,
     lastFetchedAt: row.last_fetched_at,
     lastAlertSignature: row.last_alert_signature,
+    whatsappGroupName: row.whatsapp_group_name || "",
+    whatsappGroupWebhook: row.whatsapp_group_webhook || "",
   };
+}
+
+export function assertGroupWebhook(url) {
+  if (!url) return;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new HttpError(400, "Enter a webhook URL that starts with https://");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new HttpError(400, "Enter a webhook URL that starts with https://");
+  }
+  if (parsed.hostname === "chat.whatsapp.com" || parsed.hostname.endsWith(".whatsapp.com")) {
+    throw new HttpError(
+      400,
+      "A WhatsApp invite link cannot receive alerts. Paste the webhook of the bot already in the group. This app does not sign in to your personal WhatsApp.",
+    );
+  }
 }
 
 export function updateSettings(db, body) {
   const current = getSettings(db);
   const autoNotify = body.autoNotify !== undefined ? Boolean(body.autoNotify) : current.autoNotify;
-  db.prepare("UPDATE weather_settings SET auto_notify = ? WHERE id = 1").run(autoNotify ? 1 : 0);
+  const whatsappGroupName =
+    body.whatsappGroupName !== undefined ? String(body.whatsappGroupName || "").trim() : current.whatsappGroupName;
+  const whatsappGroupWebhook =
+    body.whatsappGroupWebhook !== undefined
+      ? String(body.whatsappGroupWebhook || "").trim()
+      : current.whatsappGroupWebhook;
+  assertGroupWebhook(whatsappGroupWebhook);
+  db.prepare(
+    "UPDATE weather_settings SET auto_notify = ?, whatsapp_group_name = ?, whatsapp_group_webhook = ? WHERE id = 1",
+  ).run(autoNotify ? 1 : 0, whatsappGroupName, whatsappGroupWebhook);
   return getSettings(db);
 }
 

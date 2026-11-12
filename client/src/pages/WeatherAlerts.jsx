@@ -10,6 +10,8 @@ export function WeatherAlerts() {
   const [groups, setGroups] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [alertMessage, setAlertMessage] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [groupWebhook, setGroupWebhook] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -27,6 +29,8 @@ export function WeatherAlerts() {
       setGroups(g.items);
       setNotifications(n.items);
       setAlertMessage(weather.alertMessage || "");
+      setGroupName(s.whatsappGroupName || "");
+      setGroupWebhook(s.whatsappGroupWebhook || "");
       setError("");
     } catch (err) {
       setError(err.message);
@@ -44,6 +48,23 @@ export function WeatherAlerts() {
     });
     setSettings(next);
     setMessage(next.autoNotify ? "Auto-notify is on." : "Auto-notify is off.");
+  }
+
+  async function saveWhatsAppGroup(event) {
+    event.preventDefault();
+    try {
+      const next = await api.put("/api/weather/settings", {
+        whatsappGroupName: groupName,
+        whatsappGroupWebhook: groupWebhook,
+      });
+      setSettings(next);
+      setGroupName(next.whatsappGroupName || "");
+      setGroupWebhook(next.whatsappGroupWebhook || "");
+      setMessage(next.whatsappGroupWebhook ? "WhatsApp group linked. No personal WhatsApp sign-in is used." : "WhatsApp group link cleared.");
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   async function notifyNow() {
@@ -133,6 +154,34 @@ export function WeatherAlerts() {
           )}
         </section>
       ) : null}
+
+      <section className="form-card">
+        <h2>WhatsApp group</h2>
+        <p className="lede">
+          Alerts are posted to the group through a webhook. This app does not sign in to your personal WhatsApp. Paste the
+          webhook from the bot or automation that is already a member of the group. It receives JSON with a text field.
+        </p>
+        <form className="form-grid" onSubmit={saveWhatsAppGroup}>
+          <label>
+            <span>Group name</span>
+            <input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="Yard HSE" />
+          </label>
+          <label className="wide">
+            <span>Group webhook URL</span>
+            <input
+              value={groupWebhook}
+              onChange={(event) => setGroupWebhook(event.target.value)}
+              placeholder="https://hooks.example/whatsapp-group"
+              inputMode="url"
+            />
+          </label>
+          <p className="form-actions wide">
+            <button type="submit" className="button">
+              Save group link
+            </button>
+          </p>
+        </form>
+      </section>
 
       <section className="form-card">
         <h2>Add contact</h2>

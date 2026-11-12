@@ -223,7 +223,9 @@ CREATE TABLE IF NOT EXISTS weather_settings (
   auto_notify INTEGER NOT NULL DEFAULT 1,
   last_overall_level TEXT,
   last_fetched_at TEXT,
-  last_alert_signature TEXT
+  last_alert_signature TEXT,
+  whatsapp_group_name TEXT NOT NULL DEFAULT '',
+  whatsapp_group_webhook TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS weather_notifications (
   id INTEGER PRIMARY KEY,
@@ -240,6 +242,12 @@ function ensureWeatherSettings(db) {
   const columns = db.prepare("PRAGMA table_info(weather_settings)").all();
   if (!columns.some((column) => column.name === "last_alert_signature")) {
     db.exec("ALTER TABLE weather_settings ADD COLUMN last_alert_signature TEXT");
+  }
+  if (!columns.some((column) => column.name === "whatsapp_group_name")) {
+    db.exec("ALTER TABLE weather_settings ADD COLUMN whatsapp_group_name TEXT NOT NULL DEFAULT ''");
+  }
+  if (!columns.some((column) => column.name === "whatsapp_group_webhook")) {
+    db.exec("ALTER TABLE weather_settings ADD COLUMN whatsapp_group_webhook TEXT NOT NULL DEFAULT ''");
   }
   const row = db.prepare("SELECT id FROM weather_settings WHERE id = 1").get();
   if (!row) db.prepare("INSERT INTO weather_settings (id, auto_notify) VALUES (1, 1)").run();

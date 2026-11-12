@@ -101,8 +101,7 @@ export async function sendWhatsApp({ to, text }) {
   }
 }
 
-export async function sendWebhook(text) {
-  const url = process.env.WHATSAPP_WEBHOOK_URL;
+export async function sendWebhook(text, url = process.env.WHATSAPP_WEBHOOK_URL) {
   if (!url) return { ok: false, detail: "webhook not configured" };
   try {
     const response = await fetch(url, {
@@ -146,9 +145,18 @@ export async function deliverToContacts(db, snapshot, { prevLevel, manual = fals
       log.push({ contactId: contact.id, name: contact.name, channel: "whatsapp", ...result });
     }
   }
-  const webhook = await sendWebhook(text);
-  if (webhook.detail !== "webhook not configured") {
-    log.push({ contactId: null, name: "WhatsApp group webhook", channel: "webhook", ...webhook });
+  const group = db
+    .prepare("SELECT whatsapp_group_name, whatsapp_group_webhook FROM weather_settings WHERE id = 1")
+    .get();
+  const groupUrl = String(group?.whatsapp_group_webhook || "").trim() || process.env.WHATSAPP_WEBHOOK_URL || "";
+  if (groupUrl) {
+    const webhook = await sendWebhook(text, groupUrl);
+    log.push({
+      contactId: null,
+      name: group?.whatsapp_group_name || "WhatsApp group",
+      channel: "whatsapp-group",
+      ...webhook,
+    });
   }
   if (log.length === 0 && manual) {
     log.push({ contactId: null, name: "—", channel: "none", ok: false, detail: "no contacts or channels configured" });
