@@ -13,6 +13,7 @@ import {
 } from "./weather.js";
 import * as weatherAdmin from "./weatherAdmin.js";
 import { formatWeatherAlert, safetyInstructions, shouldAutoNotify } from "./weatherNotify.js";
+import * as forms from "./forms.js";
 
 process.env.HSE_DB = process.env.HSE_DB || ":memory:";
 
@@ -359,8 +360,39 @@ const blocked = await weatherAdmin.notifyNow(db, {});
 assert(blocked.sent === false, "manual notify should stay quiet inside wind, rain, and the WBGT 42°C level");
 delete process.env.HSE_WEATHER_FIXTURE;
 
+process.env.HSE_FORMS_FIXTURE = JSON.stringify({
+  title: " Near miss Reporting Form (Scan QR Code)",
+  status: "Active",
+  rowCount: 109,
+  description: "QR near miss form",
+});
+const formBefore = await forms.getNearMissForm(db, {});
+assert(formBefore.form.connected === true, "the Microsoft Form is linked");
+assert(formBefore.form.microsoftRowCount === 109, "the live Microsoft Forms row count is shown");
+assert(formBefore.source === "register", "charts use the HSE register until form rows are copied in");
+assert(formBefore.stats.periodTotal === 23, "register near misses still feed the simplified charts");
+const csv = `Start time,Completion time,Email,Name,Date of near miss,Location / shop,Department,What happened,Immediate action,Category,Severity
+2026-10-02 08:00,2026-10-02 08:05,,Ahmed,2026-10-02,Shop 1,Operations,A load swung over the walkway,Stopped the lift,Dropped object,High
+2026-10-18 09:10,2026-10-18 09:12,,Priya,2026-10-18,Painting Shop,HSE,Solvent drum left unbunded,Bund restored,Chemical,Medium
+2026-11-03 11:20,2026-11-03 11:22,,Omar,2026-11-03,Fabrication Yard,Industrial Services,Open edge without a stop,Fitted a stop,Working at height,Critical`;
+const imported = forms.importFormPayload(db, { csv }, "import");
+assert(imported.created === 3, "three form rows are imported");
+const formAfter = await forms.getNearMissForm(db, { from: "2026-10-01", to: "2026-11-15" });
+assert(formAfter.source === "form", "charts switch to Microsoft Forms rows once they are copied in");
+assert(formAfter.stats.periodTotal === 3, "form charts count the imported rows");
+assert(formAfter.stats.highCritical === 2, "high and critical form rows are counted");
+assert(formAfter.stats.byCategory.find((row) => row.id === "dropped_object")?.count === 1, "dropped object maps from the form");
+assert(formAfter.stats.byCategory.find((row) => row.id === "height")?.count === 1, "working at height maps from the form");
+assert(headline(buildKpis(db, {}), "near-misses").count === 23, "form imports do not inflate the HSE register KPI");
+const xlsx = forms.exportNearMissWorkbook(db, { from: "2026-10-01", to: "2026-11-15" });
+assert(xlsx.slice(0, 2).toString() === "PK", "the near-miss report is an Excel workbook");
+assert(xlsx.length > 800, "the Excel workbook contains sheets");
+const sync = await forms.syncFormResponses(db);
+assert(sync.needsAuth === true, "live answer sync asks for an owner token when none is set");
+delete process.env.HSE_FORMS_FIXTURE;
+
 if (failures.length) {
   console.error(JSON.stringify(failures, null, 2));
   process.exit(1);
 }
-console.log("KPI links match the lists, weather SOP-59 checks pass, and a created near miss moves status.");
+console.log("KPI links match the lists, weather SOP-59 checks pass, the near-miss form charts, and a created near miss moves status.");

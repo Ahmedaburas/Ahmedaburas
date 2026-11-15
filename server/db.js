@@ -3,6 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { seed } from "./seed.js";
+import { INMA_NEAR_MISS_FORM } from "./formConfig.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -237,6 +238,40 @@ CREATE TABLE IF NOT EXISTS weather_notifications (
   delivery_log TEXT NOT NULL,
   manual INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS form_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  form_id TEXT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  group_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT '',
+  public_url TEXT NOT NULL DEFAULT '',
+  analysis_url TEXT NOT NULL DEFAULT '',
+  microsoft_row_count INTEGER,
+  last_fetched_at TEXT,
+  last_sync_at TEXT,
+  last_sync_error TEXT NOT NULL DEFAULT '',
+  last_sync_source TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS form_responses (
+  id INTEGER PRIMARY KEY,
+  response_id TEXT NOT NULL UNIQUE,
+  submitted_at TEXT NOT NULL,
+  occurred_at TEXT NOT NULL,
+  responder TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  location TEXT NOT NULL DEFAULT '',
+  site_name TEXT NOT NULL DEFAULT '',
+  department_name TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT '',
+  severity TEXT NOT NULL DEFAULT '',
+  immediate_action TEXT NOT NULL DEFAULT '',
+  answers_json TEXT NOT NULL DEFAULT '{}',
+  source TEXT NOT NULL DEFAULT 'microsoft_forms',
+  imported_at TEXT NOT NULL
+);
 `;
 
 function ensureWeatherSettings(db) {
@@ -257,6 +292,22 @@ function ensureWeatherSettings(db) {
   if (!row) db.prepare("INSERT INTO weather_settings (id, auto_notify) VALUES (1, 1)").run();
 }
 
+function ensureFormSettings(db) {
+  const row = db.prepare("SELECT id FROM form_settings WHERE id = 1").get();
+  if (row) return;
+  db.prepare(
+    `INSERT INTO form_settings (id, form_id, tenant_id, group_id, title, public_url, analysis_url, status)
+     VALUES (1, @form_id, @tenant_id, @group_id, @title, @public_url, @analysis_url, 'Active')`,
+  ).run({
+    form_id: INMA_NEAR_MISS_FORM.formId,
+    tenant_id: INMA_NEAR_MISS_FORM.tenantId,
+    group_id: INMA_NEAR_MISS_FORM.groupId,
+    title: "Near miss Reporting Form (Scan QR Code)",
+    public_url: INMA_NEAR_MISS_FORM.publicUrl,
+    analysis_url: INMA_NEAR_MISS_FORM.analysisUrl,
+  });
+}
+
 export function openDatabase() {
   const configured = process.env.HSE_DB;
   const dbPath = configured || path.join(root, "data", "hse.sqlite");
@@ -266,6 +317,7 @@ export function openDatabase() {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec(SCHEMA);
   ensureWeatherSettings(db);
+  ensureFormSettings(db);
   const count = db.prepare("SELECT COUNT(*) AS n FROM sites").get().n;
   if (count === 0) seed(db);
   return db;

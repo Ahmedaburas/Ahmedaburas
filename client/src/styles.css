@@ -291,6 +291,27 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .group-pick { border: 1px solid var(--line); border-radius: 10px; padding: 0.65rem 0.75rem; margin: 0.75rem 0; }
 .alert-copy { white-space: pre-wrap; font-family: var(--sans, inherit); font-size: 0.92rem; line-height: 1.45; background: #f7f4f1; border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem 0.9rem; margin: 0.55rem 0 0; }
 .weather-board h1 { font-size: 1.6rem; margin: 0.35rem 0 0.75rem; }
+.form-strip { margin-top: 1rem; padding: 1rem 1.05rem 1.1rem; background: white; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.form-strip-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.form-kpis { margin-top: 0.85rem; }
+.form-kpis .kpi { min-height: 7.2rem; }
+.form-caption { margin: 0.85rem 0 0.2rem; }
+.form-charts { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 1rem 1.2rem; margin-top: 0.35rem; }
+.form-charts h3 { font-size: 1rem; margin-bottom: 0.45rem; }
+.form-trend { min-width: 520px; height: 170px; }
+.stat-donut-wrap { display: flex; gap: 0.9rem; align-items: center; flex-wrap: wrap; }
+.stat-donut { width: 118px; height: 118px; border-radius: 50%; flex: none; }
+.stat-donut-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; color: var(--muted); font-size: 0.9rem; }
+.dot-swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.4rem; vertical-align: -1px; background: #8a8181; }
+.dot-swatch.low { background: #1f7a4d; }
+.dot-swatch.medium { background: #c48a16; }
+.dot-swatch.high { background: #c2410c; }
+.dot-swatch.critical { background: #9d261e; }
+.form-recent { list-style: none; margin: 0.9rem 0 0; padding: 0; display: grid; gap: 0.45rem; }
+.form-recent li { display: grid; gap: 0.1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--line); }
+.form-tools { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.9rem; align-items: center; }
+.file-button { position: relative; overflow: hidden; cursor: pointer; }
+.file-button input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .kpi-grid, .card-grid, .status-board, .two {
   display: grid;
   gap: 0.75rem;
@@ -427,7 +448,7 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .backdrop { display: none; }
 
 @media (max-width: 980px) {
-  .detail, .two, .form-grid, .repeat-card { grid-template-columns: 1fr; }
+  .detail, .two, .form-grid, .repeat-card, .form-charts { grid-template-columns: 1fr; }
   .facts .wide, .form-grid .wide, .score-hint { grid-column: auto; }
 }
 @media (min-width: 800px) {

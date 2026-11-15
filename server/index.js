@@ -12,6 +12,7 @@ import {
   today,
 } from "./domain.js";
 import { buildKpis } from "./kpi.js";
+import * as forms from "./forms.js";
 import * as records from "./records.js";
 import * as weatherAdmin from "./weatherAdmin.js";
 
@@ -22,7 +23,7 @@ const db = openDatabase();
 const app = express();
 
 app.disable("x-powered-by");
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "5mb" }));
 
 function route(fn) {
   return (req, res, next) => {
@@ -159,6 +160,49 @@ app.get(
   }),
 );
 
+app.get(
+  "/api/near-miss-form",
+  route(async (req, res) => {
+    const force = req.query.force === "1" || req.query.force === "true";
+    res.json(await forms.getNearMissForm(db, req.query, { force }));
+  }),
+);
+
+app.post(
+  "/api/near-miss-form/sync",
+  route(async (req, res) => {
+    await forms.refreshFormMeta(db, { force: true });
+    const sync = await forms.syncFormResponses(db);
+    res.json({ ...sync, ...(await forms.getNearMissForm(db, req.query || {}, { force: true })) });
+  }),
+);
+
+app.post(
+  "/api/near-miss-form/import",
+  route((req, res) => {
+    const result = forms.importFormPayload(db, req.body || {}, "import");
+    res.status(201).json(result);
+  }),
+);
+
+app.post(
+  "/api/near-miss-form/hook",
+  route((req, res) => {
+    const result = forms.importFormPayload(db, req.body || {}, "webhook");
+    res.status(201).json(result);
+  }),
+);
+
+app.get(
+  "/api/near-miss-form/export.xlsx",
+  route((req, res) => {
+    const buffer = forms.exportNearMissWorkbook(db, req.query);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="inma-near-miss-report.xlsx"');
+    res.send(buffer);
+  }),
+);
+
 const collections = [
   ["/api/near-misses", "near_miss", records.listNearMisses, records.getNearMiss, records.createNearMiss],
   ["/api/incidents", "incident", records.listIncidents, records.getIncident, records.createIncident],
@@ -242,6 +286,7 @@ const host = process.env.HOST || "127.0.0.1";
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   weatherAdmin.startWeatherPoller(db);
+  forms.startFormsPoller(db);
   app.listen(port, host, () => {
     console.log(`HSE platform API on http://${host}:${port}`);
   });

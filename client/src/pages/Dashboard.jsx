@@ -2,6 +2,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useFetch } from "../api.js";
 import { formatDate } from "../format.js";
 import { useMeta } from "../meta.js";
+import { NearMissFormPanel } from "../NearMissFormPanel.jsx";
 import { WeatherStrip } from "../WeatherStrip.jsx";
 import { Banner, PageHeader } from "../ui.jsx";
 
@@ -214,6 +215,7 @@ export function Dashboard() {
           Period {formatDate(data.applied.from)} to {formatDate(data.applied.to)}. Open workload ignores this period and stays current.
         </p>
       ) : null}
+      <NearMissFormPanel query={query} />
       {state.error ? <Banner>{state.error}</Banner> : null}
       {!data && state.loading ? <p className="quiet">Loading the dashboard…</p> : null}
       {data ? (
