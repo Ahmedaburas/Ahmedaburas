@@ -15,19 +15,54 @@ function formatRiyadh(iso) {
   }).format(new Date(iso));
 }
 
-function StatBar({ rows, tone = "nearMisses" }) {
+function patchParams(params, setParams, updates, { toggleKey, toggleValue } = {}) {
+  const next = new URLSearchParams(params);
+  if (toggleKey) {
+    if (next.get(toggleKey) === String(toggleValue)) next.delete(toggleKey);
+    else next.set(toggleKey, String(toggleValue));
+  }
+  for (const [key, value] of Object.entries(updates || {})) {
+    if (value === null || value === undefined || value === false) next.delete(key);
+    else if (value === true) continue;
+    else next.set(key, String(value));
+  }
+  setParams(next);
+}
+
+function StatBar({ rows, tone = "nearMisses", paramKey, selectedId, onSelect }) {
   const max = Math.max(1, ...rows.map((row) => row.count));
   return (
     <div className="stat-bars">
-      {rows.map((row) => (
-        <div key={row.id} className="metric">
-          <span className="metric-label">{row.label}</span>
-          <span className="metric-track">
-            <span className={`metric-fill ${tone} sev ${row.id}`} style={{ width: row.count ? `${Math.max(8, (row.count / max) * 100)}%` : "0%" }} />
-          </span>
-          <span className="metric-count">{row.count}</span>
-        </div>
-      ))}
+      {rows.map((row) => {
+        const selected = selectedId === row.id;
+        const inner = (
+          <>
+            <span className="metric-label">{row.label}</span>
+            <span className="metric-track">
+              <span className={`metric-fill ${tone} sev ${row.id}`} style={{ width: row.count ? `${Math.max(8, (row.count / max) * 100)}%` : "0%" }} />
+            </span>
+            <span className="metric-count">{row.count}</span>
+          </>
+        );
+        if (!onSelect) {
+          return (
+            <div key={row.id} className={`metric ${selected ? "selected" : ""}`}>
+              {inner}
+            </div>
+          );
+        }
+        return (
+          <button
+            key={row.id}
+            type="button"
+            className={`metric chart-btn ${selected ? "selected" : ""}`}
+            aria-pressed={selected}
+            onClick={() => onSelect(paramKey, row.id)}
+          >
+            {inner}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -40,15 +75,21 @@ function shortLabel(grain, label) {
 
 function TimelineBar({ timeline, applied }) {
   const [params, setParams] = useSearchParams();
-  const [grain, setGrain] = useState("month");
-  const rows = timeline?.[grain] || [];
+  const grain = ["year", "quarter", "month"].includes(params.get("grain")) ? params.get("grain") : "month";
+  const rows = timeline?.[{ year: "years", quarter: "quarters", month: "months" }[grain]] || [];
   const max = Math.max(1, ...rows.map((row) => row.count));
 
+  function setGrain(nextGrain) {
+    patchParams(params, setParams, { grain: nextGrain });
+  }
+
   function selectBucket(row) {
-    const next = new URLSearchParams(params);
-    next.set("from", row.from);
-    next.set("to", row.to);
-    setParams(next);
+    const selected = applied?.from === row.from && applied?.to === row.to;
+    if (selected) {
+      patchParams(params, setParams, { from: null, to: null, grain });
+      return;
+    }
+    patchParams(params, setParams, { from: row.from, to: row.to, grain: row.grain });
   }
 
   return (
@@ -74,16 +115,19 @@ function TimelineBar({ timeline, applied }) {
           ))}
         </div>
       </div>
-      <p className="quiet">Each bar is a {grain}. Select one to set the dashboard dates.</p>
+      <p className="quiet">
+        Bars stay on the full record. Select a {grain} to filter the dashboard KPIs, charts, and records below.
+      </p>
       <div className="timeline-scroll">
         <div className={`timeline-track grain-${grain}`}>
           {rows.map((row) => {
             const selected = applied?.from === row.from && applied?.to === row.to;
+            const contained = !selected && applied?.from && applied.from >= row.from && applied.to <= row.to;
             return (
               <button
                 key={row.id}
                 type="button"
-                className={`timeline-col ${row.count === 0 ? "zero" : ""} ${selected ? "selected" : ""}`}
+                className={`timeline-col ${row.count === 0 ? "zero" : ""} ${selected ? "selected" : ""} ${contained ? "contained" : ""}`}
                 onClick={() => selectBucket(row)}
                 aria-pressed={selected}
                 aria-label={`${row.label}, ${row.count} near misses`}
@@ -102,7 +146,7 @@ function TimelineBar({ timeline, applied }) {
   );
 }
 
-function SeverityDonut({ rows }) {
+function SeverityDonut({ rows, selectedId, onSelect }) {
   const total = rows.reduce((sum, row) => sum + row.count, 0);
   const colors = {
     low: "#1f7a4d",
@@ -127,13 +171,69 @@ function SeverityDonut({ rows }) {
         aria-hidden="true"
       />
       <ul className="stat-donut-legend">
-        {rows.map((row) => (
-          <li key={row.id}>
-            <span className={`dot-swatch sev ${row.id}`} />
-            {row.label} · {row.count}
-          </li>
-        ))}
+        {rows.map((row) => {
+          const selected = selectedId === row.id;
+          if (!onSelect) {
+            return (
+              <li key={row.id}>
+                <span className={`dot-swatch sev ${row.id}`} />
+                {row.label} · {row.count}
+              </li>
+            );
+          }
+          return (
+            <li key={row.id}>
+              <button
+                type="button"
+                className={`legend-btn ${selected ? "selected" : ""}`}
+                aria-pressed={selected}
+                onClick={() => onSelect("nmSeverity", row.id)}
+              >
+                <span className={`dot-swatch sev ${row.id}`} />
+                {row.label} · {row.count}
+              </button>
+            </li>
+          );
+        })}
       </ul>
+    </div>
+  );
+}
+
+function ActiveFilters({ applied, stats }) {
+  const [params, setParams] = useSearchParams();
+  const chips = [];
+  if (params.get("from")) {
+    chips.push({
+      id: "period",
+      label: stats.selected?.label || `${formatDate(applied.from)} – ${formatDate(applied.to)}`,
+      onClear: () => patchParams(params, setParams, { from: null, to: null }),
+    });
+  }
+  const named = [
+    ["nmSeverity", stats.bySeverity],
+    ["nmCategory", stats.byCategory],
+    ["nmLocation", stats.byLocation],
+  ];
+  for (const [key, rows] of named) {
+    const value = params.get(key);
+    if (!value) continue;
+    const row = rows.find((item) => item.id === value);
+    chips.push({
+      id: key,
+      label: row?.label || value,
+      onClear: () => patchParams(params, setParams, { [key]: null }),
+    });
+  }
+  if (!chips.length) return null;
+  return (
+    <div className="filter-chips" aria-label="Active dashboard filters">
+      {chips.map((chip) => (
+        <button key={chip.id} type="button" className="filter-chip" onClick={chip.onClear}>
+          {chip.label}
+          <span aria-hidden="true"> ×</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -142,6 +242,7 @@ export function NearMissFormPanel({ query }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [params, setParams] = useSearchParams();
   function formUrl({ force = false, exportExcel = false, sync = false } = {}) {
     const params = new URLSearchParams(query || "");
     if (force) params.set("force", "1");
@@ -202,6 +303,11 @@ export function NearMissFormPanel({ query }) {
   const form = data.form;
   const stats = data.stats;
   const usingForm = data.source === "form";
+  const selectedLabel = stats.selected?.label || `${formatDate(data.applied.from)} – ${formatDate(data.applied.to)}`;
+
+  function toggleChip(key, value) {
+    patchParams(params, setParams, {}, { toggleKey: key, toggleValue: value });
+  }
 
   return (
     <section className="form-strip block">
@@ -227,67 +333,91 @@ export function NearMissFormPanel({ query }) {
         </div>
       </div>
       {error ? <Banner>{error}</Banner> : null}
+      {stats.timeline ? <TimelineBar timeline={stats.timeline} applied={data.applied} /> : null}
+      <ActiveFilters applied={data.applied} stats={stats} />
       <div className="kpi-grid form-kpis">
         <article className="kpi tone-info">
           <h3>On the QR form</h3>
           <p className="kpi-value">{form.microsoftRowCount ?? 0}</p>
           <p className="kpi-hint">Live count from the linked Microsoft Form.</p>
         </article>
-        <article className="kpi tone-info">
+        <Link className="kpi tone-info" to={stats.listHref || "/near-misses"}>
           <h3>In this period</h3>
           <p className="kpi-value">{stats.periodTotal}</p>
-          <p className="kpi-hint">{usingForm ? "Synced form rows in the selected dates." : "HSE register near misses until form rows are copied in."}</p>
-        </article>
+          <p className="kpi-hint">
+            {usingForm ? "Synced form rows matching the timeline selection." : "HSE register near misses matching the timeline selection."}
+          </p>
+        </Link>
         <article className="kpi tone-info">
           <h3>This month</h3>
           <p className="kpi-value">{stats.thisMonth}</p>
-          <p className="kpi-hint">Occurred in the current calendar month.</p>
+          <p className="kpi-hint">Occurred in the current calendar month, inside the selection.</p>
         </article>
         <article className={`kpi ${stats.highCritical ? "tone-warn" : "tone-good"}`}>
           <h3>High / critical</h3>
           <p className="kpi-value">{stats.highCritical}</p>
-          <p className="kpi-hint">The more serious reports in this period.</p>
+          <p className="kpi-hint">The more serious reports in {selectedLabel}.</p>
         </article>
       </div>
       <p className="quiet form-caption">
         {usingForm
-          ? "Charts below use the Microsoft Forms near-miss rows copied into this platform."
-          : "Microsoft Forms keeps the answer sheet behind an owner login. Charts below use the HSE near-miss register until a Forms Excel/CSV is imported or an owner token is set."}{" "}
-        Period {formatDate(data.applied.from)} to {formatDate(data.applied.to)}.
+          ? "Charts and records below use the Microsoft Forms near-miss rows copied into this platform."
+          : "Microsoft Forms keeps the answer sheet behind an owner login. Charts below use the HSE register until a Forms Excel/CSV is imported or an owner token is set."}{" "}
+        Showing {selectedLabel}. Click a severity, category, or location to keep slicing the same period.
         {form.lastSyncError ? ` ${form.lastSyncError}` : ""}
       </p>
-      {stats.timeline ? <TimelineBar timeline={stats.timeline} applied={data.applied} /> : null}
       <div className="form-charts">
         <section className="block">
           <h3>By severity</h3>
-          <SeverityDonut rows={stats.bySeverity} />
+          <SeverityDonut rows={stats.bySeverity} selectedId={params.get("nmSeverity")} onSelect={toggleChip} />
         </section>
         <section className="block">
           <h3>By category</h3>
-          <StatBar rows={stats.byCategory.filter((row) => row.count > 0)} />
+          <StatBar
+            rows={stats.byCategory.filter((row) => row.count > 0 || params.get("nmCategory") === row.id)}
+            paramKey="nmCategory"
+            selectedId={params.get("nmCategory")}
+            onSelect={toggleChip}
+          />
         </section>
         <section className="block">
           <h3>By location</h3>
-          <StatBar rows={stats.byLocation} tone="openActions" />
+          <StatBar
+            rows={stats.byLocation}
+            tone="openActions"
+            paramKey="nmLocation"
+            selectedId={params.get("nmLocation")}
+            onSelect={toggleChip}
+          />
         </section>
       </div>
-      {data.recent?.length ? (
-        <ul className="form-recent">
-          {data.recent.map((row) => (
-            <li key={row.id}>
-              {row.source === "register" ? (
-                <Link to={`/near-misses/${row.id.replace(/^nm-/, "")}`}>{row.reference}</Link>
-              ) : (
-                <strong>{row.reference?.slice(0, 18) || "Form"}</strong>
-              )}
-              <span>{row.title}</span>
-              <span className="quiet">
-                {formatDate(row.occurredAt)} · {row.siteName} · {row.severity || "unspecified"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <section className="related-records">
+        <div className="timeline-head">
+          <h3>Records in {selectedLabel}</h3>
+          <Link className="button ghost" to={stats.listHref || "/near-misses"}>
+            Open matching list
+          </Link>
+        </div>
+        {data.recent?.length ? (
+          <ul className="form-recent">
+            {data.recent.map((row) => (
+              <li key={row.id}>
+                {row.source === "register" ? (
+                  <Link to={`/near-misses/${row.id.replace(/^nm-/, "")}`}>{row.reference}</Link>
+                ) : (
+                  <strong>{row.reference?.slice(0, 18) || "Form"}</strong>
+                )}
+                <span>{row.title}</span>
+                <span className="quiet">
+                  {formatDate(row.occurredAt)} · {row.siteName} · {row.severity || "unspecified"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="quiet">No near misses match this timeline selection.</p>
+        )}
+      </section>
       <div className="form-tools">
         <button type="button" className="button secondary" disabled={Boolean(busy)} onClick={syncNow}>
           {busy === "sync" ? "Syncing…" : "Refresh form"}
@@ -296,9 +426,6 @@ export function NearMissFormPanel({ query }) {
           {busy === "import" ? "Importing…" : "Import Forms Excel/CSV"}
           <input type="file" accept=".csv,.json,.txt,.tsv" disabled={Boolean(busy)} onChange={importFile} />
         </label>
-        <Link className="button ghost" to="/near-misses">
-          Open near-miss list
-        </Link>
       </div>
     </section>
   );

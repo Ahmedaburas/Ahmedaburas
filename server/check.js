@@ -376,6 +376,12 @@ assert(sumGrain(formBefore.stats.timeline.years) === 23, "year timeline matches 
 assert(sumGrain(formBefore.stats.timeline.quarters) === 23, "quarter timeline matches the period");
 assert(sumGrain(formBefore.stats.timeline.months) === 23, "month timeline matches the period");
 assert(formBefore.stats.timeline.years.length >= 1 && formBefore.stats.timeline.quarters.length >= 1, "timeline has year and quarter bars");
+const octoberRegister = await forms.getNearMissForm(db, { from: "2026-10-01", to: "2026-10-31" });
+assert(octoberRegister.stats.periodTotal === 2, "October KPI uses October near misses");
+assert(octoberRegister.stats.timeline.months.length > 1, "timeline keeps every month after a bar is selected");
+assert(octoberRegister.stats.timeline.months.find((row) => row.id === "2026-11")?.count >= 1, "November stays on the timeline when October is selected");
+assert(octoberRegister.stats.selected?.id === "2026-10", "October is marked as the selected timeline bar");
+assert(octoberRegister.stats.listHref.includes("from=2026-10-01"), "period KPI links to the matching near-miss list");
 const csv = `Start time,Completion time,Email,Name,Date of near miss,Location / shop,Department,What happened,Immediate action,Category,Severity
 2026-10-02 08:00,2026-10-02 08:05,,Ahmed,2026-10-02,Shop 1,Operations,A load swung over the walkway,Stopped the lift,Dropped object,High
 2026-10-18 09:10,2026-10-18 09:12,,Priya,2026-10-18,Painting Shop,HSE,Solvent drum left unbunded,Bund restored,Chemical,Medium
@@ -388,6 +394,14 @@ assert(formAfter.stats.periodTotal === 3, "form charts count the imported rows")
 assert(sumGrain(formAfter.stats.timeline.months) === 3, "imported form rows fill the month timeline");
 assert(formAfter.stats.timeline.months.find((row) => row.id === "2026-10")?.count === 2, "October holds two form rows");
 assert(formAfter.stats.timeline.quarters.find((row) => row.id === "2026-Q4")?.count === 3, "Q4 holds the imported form rows");
+const octoberForm = await forms.getNearMissForm(db, { from: "2026-10-01", to: "2026-10-31" });
+assert(octoberForm.stats.periodTotal === 2, "October form charts count only October rows");
+assert(octoberForm.stats.timeline.months.find((row) => row.id === "2026-11")?.count === 1, "the timeline still shows November after October is selected");
+assert(octoberForm.recent.every((row) => String(row.occurredAt).slice(0, 7) === "2026-10"), "related records are the October rows");
+const highOct = await forms.getNearMissForm(db, { from: "2026-10-01", to: "2026-10-31", nmSeverity: "high" });
+assert(highOct.stats.periodTotal === 1, "severity chip slices the selected month");
+assert(sumGrain(highOct.stats.timeline.months) === 3, "timeline bars ignore the severity chip");
+assert(highOct.stats.highCritical === 1, "high/critical follows the chip");
 assert(formAfter.stats.highCritical === 2, "high and critical form rows are counted");
 assert(formAfter.stats.byCategory.find((row) => row.id === "dropped_object")?.count === 1, "dropped object maps from the form");
 assert(formAfter.stats.byCategory.find((row) => row.id === "height")?.count === 1, "working at height maps from the form");

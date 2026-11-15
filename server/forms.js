@@ -2,10 +2,12 @@ import {
   ENUMS,
   HttpError,
   camel,
+  defaultFrom,
   eachMonth,
   eachQuarter,
   eachYear,
   emptyFilter,
+  link,
   monthLabel,
   monthRange,
   nowIso,
@@ -509,7 +511,69 @@ function matchScope(rows, { siteId, departmentId }, db) {
   return next;
 }
 
-function buildStats(rows, from, to) {
+function nearMissChips(query = {}) {
+  return {
+    nmSeverity: query.nmSeverity ? String(query.nmSeverity) : "",
+    nmCategory: query.nmCategory ? String(query.nmCategory) : "",
+    nmLocation: query.nmLocation ? String(query.nmLocation) : "",
+  };
+}
+
+function applyNearMissChips(rows, chips) {
+  let next = rows;
+  if (chips.nmSeverity) next = next.filter((row) => row.severity === chips.nmSeverity);
+  if (chips.nmCategory) next = next.filter((row) => row.category === chips.nmCategory);
+  if (chips.nmLocation) {
+    const needle = normalizeKey(chips.nmLocation);
+    next = next.filter((row) => normalizeKey(row.siteName) === needle || normalizeKey(row.location) === needle);
+  }
+  return next;
+}
+
+function timelineSpan(rows, period) {
+  const end = today();
+  const days = rows
+    .map((row) => String(row.occurredAt || "").slice(0, 10))
+    .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day))
+    .sort();
+  const starts = [defaultFrom(end), period.from];
+  if (days[0]) starts.push(days[0]);
+  starts.sort();
+  return { from: starts[0], to: end < period.to ? period.to : end };
+}
+
+function buildTimeline(rows, spanFrom, spanTo) {
+  function countBetween(start, end) {
+    return rows.filter((row) => inPeriod(row.occurredAt, start, end)).length;
+  }
+  function bucket(id, grain, label, range) {
+    return {
+      id,
+      grain,
+      label,
+      from: range.from,
+      to: range.to,
+      count: countBetween(range.from, range.to),
+    };
+  }
+  return {
+    span: { from: spanFrom, to: spanTo },
+    years: eachYear(spanFrom, spanTo).map((year) => bucket(year, "year", year, yearRange(year))),
+    quarters: eachQuarter(spanFrom, spanTo).map((id) => bucket(id, "quarter", quarterLabel(id), quarterRange(id))),
+    months: eachMonth(spanFrom, spanTo).map((month) => bucket(month, "month", monthLabel(month), monthRange(month))),
+  };
+}
+
+function selectedFromTimeline(timeline, from, to) {
+  const keys = { month: "months", quarter: "quarters", year: "years" };
+  for (const grain of ["month", "quarter", "year"]) {
+    const row = (timeline[keys[grain]] || []).find((item) => item.from === from && item.to === to);
+    if (row) return { grain: row.grain, id: row.id, label: row.label, from: row.from, to: row.to, count: row.count };
+  }
+  return { grain: null, id: null, label: null, from, to, count: null };
+}
+
+function buildStats(rows, from, to, { timeline, scope = {}, chips = {} } = {}) {
   const period = rows.filter((row) => inPeriod(row.occurredAt, from, to));
   const thisMonth = today().slice(0, 7);
   const byMonthMap = {};
@@ -525,29 +589,20 @@ function buildStats(rows, from, to) {
     addCount(byLocation, row.siteName || row.location || "Unspecified");
   }
   const highCritical = period.filter((row) => row.severity === "high" || row.severity === "critical").length;
-  function countBetween(start, end) {
-    return period.filter((row) => inPeriod(row.occurredAt, start, end)).length;
-  }
-  const timeline = {
-    years: eachYear(from, to).map((year) => {
-      const range = yearRange(year);
-      return { id: year, grain: "year", label: year, from: range.from, to: range.to, count: countBetween(range.from, range.to) };
-    }),
-    quarters: eachQuarter(from, to).map((id) => {
-      const range = quarterRange(id);
-      return { id, grain: "quarter", label: quarterLabel(id), from: range.from, to: range.to, count: countBetween(range.from, range.to) };
-    }),
-    months: eachMonth(from, to).map((month) => {
-      const range = monthRange(month);
-      return { id: month, grain: "month", label: monthLabel(month), from: range.from, to: range.to, count: countBetween(range.from, range.to) };
-    }),
-  };
+  const dash = { from, to, siteId: scope.siteId, departmentId: scope.departmentId };
   return {
     total: rows.length,
     periodTotal: period.length,
     thisMonth: period.filter((row) => String(row.occurredAt).slice(0, 7) === thisMonth).length,
     highCritical,
     timeline,
+    selected: timeline ? selectedFromTimeline(timeline, from, to) : null,
+    chips,
+    listHref: link("/near-misses", {
+      ...dash,
+      severity: chips.nmSeverity,
+      category: chips.nmCategory,
+    }),
     byMonth: Object.entries(byMonthMap).map(([month, count]) => ({
       id: month,
       label: monthLabel(month),
@@ -590,7 +645,14 @@ export async function getNearMissForm(db, query = {}, { force = false } = {}) {
   const registerRows = matchScope(listNearMisses(db, emptyFilter({})).map(unifyRegisterRow), period, db);
   const useForm = formRows.length > 0;
   const rows = useForm ? formRows : registerRows;
-  const stats = buildStats(rows, period.from, period.to);
+  const chips = nearMissChips(query);
+  const span = timelineSpan(rows, period);
+  const timeline = buildTimeline(rows, span.from, span.to);
+  const periodRows = applyNearMissChips(
+    rows.filter((row) => inPeriod(row.occurredAt, period.from, period.to)),
+    chips,
+  );
+  const stats = buildStats(periodRows, period.from, period.to, { timeline, scope: period, chips });
   return {
     form: {
       ...INMA_NEAR_MISS_FORM,
@@ -610,9 +672,7 @@ export async function getNearMissForm(db, query = {}, { force = false } = {}) {
     source: useForm ? "form" : "register",
     applied: { from: period.from, to: period.to, siteId: period.siteId, departmentId: period.departmentId },
     stats,
-    recent: stats.periodTotal
-      ? rows.filter((row) => inPeriod(row.occurredAt, period.from, period.to)).slice(0, 8)
-      : [],
+    recent: periodRows.slice(0, 8),
   };
 }
 

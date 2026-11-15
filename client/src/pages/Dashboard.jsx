@@ -212,7 +212,8 @@ export function Dashboard() {
       </div>
       {data ? (
         <p className="date-note">
-          Period {formatDate(data.applied.from)} to {formatDate(data.applied.to)}. Open workload ignores this period and stays current.
+          Period {formatDate(data.applied.from)} to {formatDate(data.applied.to)}
+          {params.get("from") ? " from the near-miss timeline" : ""}. KPI cards, charts, and records below follow these dates. Open workload ignores this period and stays current.
         </p>
       ) : null}
       <NearMissFormPanel query={query} />
