@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "./api.js";
 import { formatDate } from "./format.js";
 import { Banner } from "./ui.jsx";
@@ -32,27 +32,73 @@ function StatBar({ rows, tone = "nearMisses" }) {
   );
 }
 
-function MonthChart({ rows }) {
+function shortLabel(grain, label) {
+  if (grain === "month") return label.replace(/ 20/, " ");
+  if (grain === "quarter") return label.replace(/ 20/, " ");
+  return label;
+}
+
+function TimelineBar({ timeline, applied }) {
+  const [params, setParams] = useSearchParams();
+  const [grain, setGrain] = useState("month");
+  const rows = timeline?.[grain] || [];
   const max = Math.max(1, ...rows.map((row) => row.count));
+
+  function selectBucket(row) {
+    const next = new URLSearchParams(params);
+    next.set("from", row.from);
+    next.set("to", row.to);
+    setParams(next);
+  }
+
   return (
-    <div className="trend-scroll">
-      <div className="trend form-trend">
-        {rows.map((row) => (
-          <div key={row.id} className="trend-col">
-            <div className="trend-bars">
-              <div
-                className={`trend-bar nearMisses ${row.count === 0 ? "zero" : ""}`}
-                style={{ height: `${Math.max(18, (row.count / max) * 120)}px` }}
+    <section className="block timeline-block">
+      <div className="timeline-head">
+        <h3>Near miss timeline</h3>
+        <div className="grain-toggle" role="tablist" aria-label="Timeline grouping">
+          {[
+            ["year", "Years"],
+            ["quarter", "Quarters"],
+            ["month", "Months"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={grain === id}
+              className={grain === id ? "grain-btn active" : "grain-btn"}
+              onClick={() => setGrain(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="quiet">Each bar is a {grain}. Select one to set the dashboard dates.</p>
+      <div className="timeline-scroll">
+        <div className={`timeline-track grain-${grain}`}>
+          {rows.map((row) => {
+            const selected = applied?.from === row.from && applied?.to === row.to;
+            return (
+              <button
+                key={row.id}
+                type="button"
+                className={`timeline-col ${row.count === 0 ? "zero" : ""} ${selected ? "selected" : ""}`}
+                onClick={() => selectBucket(row)}
+                aria-pressed={selected}
                 aria-label={`${row.label}, ${row.count} near misses`}
               >
-                {row.count}
-              </div>
-            </div>
-            <div className="trend-label">{row.label.replace(/ 20/, " ")}</div>
-          </div>
-        ))}
+                <span className="timeline-count">{row.count}</span>
+                <span className="timeline-fill-wrap">
+                  <span className="timeline-fill" style={{ height: `${Math.max(8, (row.count / max) * 100)}%` }} />
+                </span>
+                <span className="timeline-label">{shortLabel(grain, row.label)}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -210,11 +256,8 @@ export function NearMissFormPanel({ query }) {
         Period {formatDate(data.applied.from)} to {formatDate(data.applied.to)}.
         {form.lastSyncError ? ` ${form.lastSyncError}` : ""}
       </p>
+      {stats.timeline ? <TimelineBar timeline={stats.timeline} applied={data.applied} /> : null}
       <div className="form-charts">
-        <section className="block">
-          <h3>By month</h3>
-          <MonthChart rows={stats.byMonth} />
-        </section>
         <section className="block">
           <h3>By severity</h3>
           <SeverityDonut rows={stats.bySeverity} />

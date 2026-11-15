@@ -1,4 +1,20 @@
-import { ENUMS, HttpError, camel, eachMonth, emptyFilter, monthLabel, nowIso, resolvePeriod, today } from "./domain.js";
+import {
+  ENUMS,
+  HttpError,
+  camel,
+  eachMonth,
+  eachQuarter,
+  eachYear,
+  emptyFilter,
+  monthLabel,
+  monthRange,
+  nowIso,
+  quarterLabel,
+  quarterRange,
+  resolvePeriod,
+  today,
+  yearRange,
+} from "./domain.js";
 import { insertRow } from "./db.js";
 import { INMA_NEAR_MISS_FORM } from "./formConfig.js";
 import { listDepartments, listNearMisses, listSites } from "./records.js";
@@ -509,11 +525,29 @@ function buildStats(rows, from, to) {
     addCount(byLocation, row.siteName || row.location || "Unspecified");
   }
   const highCritical = period.filter((row) => row.severity === "high" || row.severity === "critical").length;
+  function countBetween(start, end) {
+    return period.filter((row) => inPeriod(row.occurredAt, start, end)).length;
+  }
+  const timeline = {
+    years: eachYear(from, to).map((year) => {
+      const range = yearRange(year);
+      return { id: year, grain: "year", label: year, from: range.from, to: range.to, count: countBetween(range.from, range.to) };
+    }),
+    quarters: eachQuarter(from, to).map((id) => {
+      const range = quarterRange(id);
+      return { id, grain: "quarter", label: quarterLabel(id), from: range.from, to: range.to, count: countBetween(range.from, range.to) };
+    }),
+    months: eachMonth(from, to).map((month) => {
+      const range = monthRange(month);
+      return { id: month, grain: "month", label: monthLabel(month), from: range.from, to: range.to, count: countBetween(range.from, range.to) };
+    }),
+  };
   return {
     total: rows.length,
     periodTotal: period.length,
     thisMonth: period.filter((row) => String(row.occurredAt).slice(0, 7) === thisMonth).length,
     highCritical,
+    timeline,
     byMonth: Object.entries(byMonthMap).map(([month, count]) => ({
       id: month,
       label: monthLabel(month),

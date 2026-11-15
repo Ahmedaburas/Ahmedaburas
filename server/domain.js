@@ -227,6 +227,55 @@ export function monthLabel(month) {
   return `${names[Number(m) - 1]} ${y}`;
 }
 
+export function capToToday(date) {
+  const t = today();
+  return date > t ? t : date;
+}
+
+export function eachYear(from, to) {
+  const out = [];
+  for (let y = Number(from.slice(0, 4)); y <= Number(to.slice(0, 4)); y += 1) out.push(String(y));
+  return out;
+}
+
+export function eachQuarter(from, to) {
+  const out = [];
+  let y = Number(from.slice(0, 4));
+  let q = Math.ceil(Number(from.slice(5, 7)) / 3);
+  const endY = Number(to.slice(0, 4));
+  const endQ = Math.ceil(Number(to.slice(5, 7)) / 3);
+  while (y < endY || (y === endY && q <= endQ)) {
+    out.push(`${y}-Q${q}`);
+    q += 1;
+    if (q === 5) {
+      q = 1;
+      y += 1;
+    }
+  }
+  return out;
+}
+
+export function yearRange(year) {
+  return { from: `${year}-01-01`, to: capToToday(`${year}-12-31`) };
+}
+
+export function quarterRange(id) {
+  const [year, qText] = id.split("-Q");
+  const q = Number(qText);
+  const startMonth = String((q - 1) * 3 + 1).padStart(2, "0");
+  const endMonth = String(q * 3).padStart(2, "0");
+  return { from: `${year}-${startMonth}-01`, to: capToToday(lastDay(`${year}-${endMonth}`)) };
+}
+
+export function monthRange(month) {
+  return { from: `${month}-01`, to: capToToday(lastDay(month)) };
+}
+
+export function quarterLabel(id) {
+  const [year, q] = id.split("-Q");
+  return `Q${q} ${year}`;
+}
+
 export function riskBand(score) {
   const n = Number(score) || 0;
   if (n >= 17) return "critical";

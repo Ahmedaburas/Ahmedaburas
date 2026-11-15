@@ -296,6 +296,53 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .form-kpis { margin-top: 0.85rem; }
 .form-kpis .kpi { min-height: 7.2rem; }
 .form-caption { margin: 0.85rem 0 0.2rem; }
+.timeline-block { margin-top: 0.85rem; }
+.timeline-head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.timeline-head h3 { margin: 0; font-size: 1rem; }
+.grain-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.grain-btn {
+  background: white;
+  border: 0;
+  border-right: 1px solid var(--line);
+  padding: 0.32rem 0.7rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.grain-btn:last-child { border-right: 0; }
+.grain-btn.active { background: var(--navy); color: white; }
+.timeline-scroll { overflow-x: auto; margin-top: 0.55rem; }
+.timeline-track { display: flex; align-items: stretch; gap: 0.35rem; min-height: 168px; }
+.timeline-track.grain-month { min-width: 640px; }
+.timeline-track.grain-quarter { min-width: 420px; }
+.timeline-col {
+  flex: 1;
+  min-width: 2.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+.timeline-count { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+.timeline-fill-wrap {
+  flex: 1;
+  width: 100%;
+  min-height: 110px;
+  display: flex;
+  align-items: flex-end;
+  background: #f0ecec;
+  border-radius: 6px 6px 2px 2px;
+  overflow: hidden;
+}
+.timeline-fill { display: block; width: 100%; background: #1f6f8a; border-radius: 6px 6px 2px 2px; }
+.timeline-col.zero .timeline-fill { opacity: 0.28; }
+.timeline-col.selected .timeline-fill { background: var(--brand); }
+.timeline-col.selected .timeline-count { color: var(--brand); }
+.timeline-col:hover .timeline-fill-wrap { outline: 2px solid var(--brand); outline-offset: 1px; }
+.timeline-label { font-size: 0.72rem; color: var(--muted); text-align: center; line-height: 1.2; }
 .form-charts { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 1rem 1.2rem; margin-top: 0.35rem; }
 .form-charts h3 { font-size: 1rem; margin-bottom: 0.45rem; }
 .form-trend { min-width: 520px; height: 170px; }

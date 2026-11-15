@@ -371,6 +371,11 @@ assert(formBefore.form.connected === true, "the Microsoft Form is linked");
 assert(formBefore.form.microsoftRowCount === 109, "the live Microsoft Forms row count is shown");
 assert(formBefore.source === "register", "charts use the HSE register until form rows are copied in");
 assert(formBefore.stats.periodTotal === 23, "register near misses still feed the simplified charts");
+const sumGrain = (rows) => rows.reduce((total, row) => total + row.count, 0);
+assert(sumGrain(formBefore.stats.timeline.years) === 23, "year timeline matches the period");
+assert(sumGrain(formBefore.stats.timeline.quarters) === 23, "quarter timeline matches the period");
+assert(sumGrain(formBefore.stats.timeline.months) === 23, "month timeline matches the period");
+assert(formBefore.stats.timeline.years.length >= 1 && formBefore.stats.timeline.quarters.length >= 1, "timeline has year and quarter bars");
 const csv = `Start time,Completion time,Email,Name,Date of near miss,Location / shop,Department,What happened,Immediate action,Category,Severity
 2026-10-02 08:00,2026-10-02 08:05,,Ahmed,2026-10-02,Shop 1,Operations,A load swung over the walkway,Stopped the lift,Dropped object,High
 2026-10-18 09:10,2026-10-18 09:12,,Priya,2026-10-18,Painting Shop,HSE,Solvent drum left unbunded,Bund restored,Chemical,Medium
@@ -380,6 +385,9 @@ assert(imported.created === 3, "three form rows are imported");
 const formAfter = await forms.getNearMissForm(db, { from: "2026-10-01", to: "2026-11-15" });
 assert(formAfter.source === "form", "charts switch to Microsoft Forms rows once they are copied in");
 assert(formAfter.stats.periodTotal === 3, "form charts count the imported rows");
+assert(sumGrain(formAfter.stats.timeline.months) === 3, "imported form rows fill the month timeline");
+assert(formAfter.stats.timeline.months.find((row) => row.id === "2026-10")?.count === 2, "October holds two form rows");
+assert(formAfter.stats.timeline.quarters.find((row) => row.id === "2026-Q4")?.count === 3, "Q4 holds the imported form rows");
 assert(formAfter.stats.highCritical === 2, "high and critical form rows are counted");
 assert(formAfter.stats.byCategory.find((row) => row.id === "dropped_object")?.count === 1, "dropped object maps from the form");
 assert(formAfter.stats.byCategory.find((row) => row.id === "height")?.count === 1, "working at height maps from the form");
