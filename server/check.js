@@ -304,15 +304,15 @@ weatherAdmin.createContact(db, {
   email: "weather-check@example.com",
   notifyEmail: true,
 });
-let inviteRejected = false;
-try {
-  weatherAdmin.updateSettings(db, { whatsappGroupWebhook: "https://chat.whatsapp.com/InviteCode" });
-} catch (error) {
-  inviteRejected = error.status === 400 && /personal WhatsApp/.test(error.message);
-}
-assert(inviteRejected, "a WhatsApp invite link is rejected");
+const inviteSaved = weatherAdmin.updateSettings(db, {
+  whatsappGroupName: "Yard HSE",
+  whatsappGroupWebhook: "https://chat.whatsapp.com/InviteCode",
+});
+assert(inviteSaved.whatsappGroupInvite === "https://chat.whatsapp.com/InviteCode", "the group invite is stored");
+assert(!inviteSaved.whatsappGroupWebhook, "an invite is not posted to as a webhook");
 weatherAdmin.updateSettings(db, {
   whatsappGroupName: "Yard HSE",
+  whatsappGroupInvite: "https://chat.whatsapp.com/InviteCode",
   whatsappGroupWebhook: "https://group.example/hse",
 });
 const calls = [];
@@ -328,12 +328,16 @@ try {
   globalThis.fetch = originalFetch;
 }
 assert(manual.sent === true && manual.log.length >= 1, "manual notify should send when wind exceeds 48 km/h");
-assert(calls.includes("https://group.example/hse"), "alert is posted to the WhatsApp group webhook");
+assert(calls.includes("https://group.example/hse"), "alert is posted to the optional webhook");
+assert(
+  manual.log.some((item) => item.channel === "live-board" && item.ok),
+  "auto sending writes the live board without a WhatsApp login",
+);
 assert(
   manual.log.some((item) => item.channel === "whatsapp-group" && item.name === "Yard HSE" && item.ok),
-  "group delivery is logged",
+  "group webhook delivery is logged when configured",
 );
-weatherAdmin.updateSettings(db, { whatsappGroupName: "", whatsappGroupWebhook: "" });
+weatherAdmin.updateSettings(db, { whatsappGroupName: "", whatsappGroupWebhook: "", whatsappGroupInvite: "" });
 process.env.HSE_WEATHER_FIXTURE = JSON.stringify({
   source: "fixture",
   condition: "clear",

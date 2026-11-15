@@ -1,5 +1,5 @@
 import { HttpError } from "./domain.js";
-import { deliverToContacts, formatWeatherAlert, shouldAutoNotify } from "./weatherNotify.js";
+import { deliverToContacts, formatWeatherAlert, formatWeatherAlerts, shouldAutoNotify } from "./weatherNotify.js";
 import { alertSignature, exceededNotifyMetrics, getCachedWeather, refreshWeatherReading } from "./weather.js";
 
 function rowToContact(row) {
@@ -19,7 +19,7 @@ export function getSettings(db) {
   const row = db
     .prepare(
       `SELECT auto_notify, last_overall_level, last_fetched_at, last_alert_signature,
-              whatsapp_group_name, whatsapp_group_webhook
+              whatsapp_group_name, whatsapp_group_webhook, whatsapp_group_invite
        FROM weather_settings WHERE id = 1`,
     )
     .get();
@@ -32,6 +32,7 @@ export function getSettings(db) {
       lastAlertSignature: null,
       whatsappGroupName: "",
       whatsappGroupWebhook: "",
+      whatsappGroupInvite: "",
     };
   }
   return {
@@ -41,26 +42,39 @@ export function getSettings(db) {
     lastAlertSignature: row.last_alert_signature,
     whatsappGroupName: row.whatsapp_group_name || "",
     whatsappGroupWebhook: row.whatsapp_group_webhook || "",
+    whatsappGroupInvite: row.whatsapp_group_invite || "",
   };
+}
+
+export function isWhatsAppInvite(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "chat.whatsapp.com" || parsed.hostname.endsWith(".whatsapp.com");
+  } catch {
+    return false;
+  }
+}
+
+export function classifyGroupTarget(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return { invite: "", webhook: "" };
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new HttpError(400, "Paste the WhatsApp group invite (chat.whatsapp.com/…) or an https webhook.");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new HttpError(400, "Paste the WhatsApp group invite (chat.whatsapp.com/…) or an https webhook.");
+  }
+  if (isWhatsAppInvite(raw)) return { invite: raw, webhook: "" };
+  return { invite: "", webhook: raw };
 }
 
 export function assertGroupWebhook(url) {
   if (!url) return;
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new HttpError(400, "Enter a webhook URL that starts with https://");
-  }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new HttpError(400, "Enter a webhook URL that starts with https://");
-  }
-  if (parsed.hostname === "chat.whatsapp.com" || parsed.hostname.endsWith(".whatsapp.com")) {
-    throw new HttpError(
-      400,
-      "A WhatsApp invite link cannot receive alerts. Paste the webhook of the bot already in the group. This app does not sign in to your personal WhatsApp.",
-    );
-  }
+  if (isWhatsAppInvite(url)) return;
+  classifyGroupTarget(url);
 }
 
 export function updateSettings(db, body) {
@@ -68,14 +82,29 @@ export function updateSettings(db, body) {
   const autoNotify = body.autoNotify !== undefined ? Boolean(body.autoNotify) : current.autoNotify;
   const whatsappGroupName =
     body.whatsappGroupName !== undefined ? String(body.whatsappGroupName || "").trim() : current.whatsappGroupName;
-  const whatsappGroupWebhook =
+  let whatsappGroupInvite =
+    body.whatsappGroupInvite !== undefined
+      ? String(body.whatsappGroupInvite || "").trim()
+      : current.whatsappGroupInvite;
+  let whatsappGroupWebhook =
     body.whatsappGroupWebhook !== undefined
       ? String(body.whatsappGroupWebhook || "").trim()
       : current.whatsappGroupWebhook;
-  assertGroupWebhook(whatsappGroupWebhook);
+  if (body.whatsappGroupWebhook !== undefined && isWhatsAppInvite(whatsappGroupWebhook)) {
+    const classified = classifyGroupTarget(whatsappGroupWebhook);
+    whatsappGroupInvite = classified.invite || whatsappGroupInvite;
+    whatsappGroupWebhook = "";
+  } else if (whatsappGroupWebhook) {
+    assertGroupWebhook(whatsappGroupWebhook);
+  }
+  if (whatsappGroupInvite && !isWhatsAppInvite(whatsappGroupInvite)) {
+    throw new HttpError(400, "The group invite must be a chat.whatsapp.com link.");
+  }
   db.prepare(
-    "UPDATE weather_settings SET auto_notify = ?, whatsapp_group_name = ?, whatsapp_group_webhook = ? WHERE id = 1",
-  ).run(autoNotify ? 1 : 0, whatsappGroupName, whatsappGroupWebhook);
+    `UPDATE weather_settings
+     SET auto_notify = ?, whatsapp_group_name = ?, whatsapp_group_webhook = ?, whatsapp_group_invite = ?
+     WHERE id = 1`,
+  ).run(autoNotify ? 1 : 0, whatsappGroupName, whatsappGroupWebhook, whatsappGroupInvite);
   return getSettings(db);
 }
 
@@ -186,6 +215,7 @@ export async function getWeather(db, { force = false } = {}) {
     notified,
     exceeded,
     alertMessage: exceeded.length ? formatWeatherAlert(snapshot) : "",
+    alertMessages: exceeded.length ? formatWeatherAlerts(snapshot) : [],
   };
 }
 

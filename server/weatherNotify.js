@@ -57,11 +57,15 @@ export function formatWeatherAlerts(snapshot) {
     if (!grouped.has(title)) grouped.set(title, []);
     grouped.get(title).push(item);
   }
-  return [...grouped.entries()].map(([title, items]) => ({
-    title,
-    subject: `SOP-59 ${title}`,
-    text: [title, ...items.map((item) => `${item.label}: ${item.display} — ${item.status}\n${item.text}`)].join("\n"),
-  }));
+  return [...grouped.entries()].map(([title, items]) => {
+    const text = [title, ...items.map((item) => `${item.label}: ${item.display} — ${item.status}\n${item.text}`)].join("\n");
+    return {
+      title,
+      subject: `SOP-59 ${title}`,
+      text,
+      shareUrl: `https://wa.me/?text=${encodeURIComponent(text)}`,
+    };
+  });
 }
 
 export function formatWeatherAlert(snapshot) {
@@ -155,10 +159,18 @@ export async function deliverToContacts(db, snapshot, { prevLevel, manual = fals
       .join(", ") || snapshot.overall.level;
   const log = [];
   const group = db
-    .prepare("SELECT whatsapp_group_name, whatsapp_group_webhook FROM weather_settings WHERE id = 1")
+    .prepare("SELECT whatsapp_group_name, whatsapp_group_webhook, whatsapp_group_invite FROM weather_settings WHERE id = 1")
     .get();
   const groupUrl = String(group?.whatsapp_group_webhook || "").trim() || process.env.WHATSAPP_WEBHOOK_URL || "";
   for (const message of messages) {
+    log.push({
+      contactId: null,
+      name: group?.whatsapp_group_name || "HSE live board",
+      channel: "live-board",
+      alert: message.title,
+      ok: true,
+      detail: "/weather/board",
+    });
     for (const contact of contacts) {
       if (contact.notify_email && contact.email) {
         const result = await sendEmail({ to: contact.email, subject: message.subject, text: message.text });

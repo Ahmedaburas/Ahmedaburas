@@ -57,6 +57,8 @@ export function WeatherStrip() {
           <p className="quiet">
             Last updated: {formatRiyadh(data.fetchedAt)} · refreshes every {data.refreshSeconds / 60} min ·{" "}
             <Link to="/weather">Weather alerts</Link>
+            {" · "}
+            <Link to="/weather/board">Live board</Link>
           </p>
         </div>
         <button type="button" className="button secondary weather-refresh" onClick={() => load(true)} aria-label="Refresh weather">

@@ -11,7 +11,7 @@ export function WeatherAlerts() {
   const [notifications, setNotifications] = useState([]);
   const [alertMessage, setAlertMessage] = useState("");
   const [groupName, setGroupName] = useState("");
-  const [groupWebhook, setGroupWebhook] = useState("");
+  const [groupInvite, setGroupInvite] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -30,7 +30,7 @@ export function WeatherAlerts() {
       setNotifications(n.items);
       setAlertMessage(weather.alertMessage || "");
       setGroupName(s.whatsappGroupName || "");
-      setGroupWebhook(s.whatsappGroupWebhook || "");
+      setGroupInvite(s.whatsappGroupInvite || s.whatsappGroupWebhook || "");
       setError("");
     } catch (err) {
       setError(err.message);
@@ -55,12 +55,19 @@ export function WeatherAlerts() {
     try {
       const next = await api.put("/api/weather/settings", {
         whatsappGroupName: groupName,
-        whatsappGroupWebhook: groupWebhook,
+        whatsappGroupInvite: groupInvite.startsWith("https://chat.whatsapp.com") ? groupInvite : "",
+        whatsappGroupWebhook: groupInvite.startsWith("https://chat.whatsapp.com") ? "" : groupInvite,
       });
       setSettings(next);
       setGroupName(next.whatsappGroupName || "");
-      setGroupWebhook(next.whatsappGroupWebhook || "");
-      setMessage(next.whatsappGroupWebhook ? "WhatsApp group linked. No personal WhatsApp sign-in is used." : "WhatsApp group link cleared.");
+      setGroupInvite(next.whatsappGroupInvite || next.whatsappGroupWebhook || "");
+      setMessage(
+        next.whatsappGroupInvite
+          ? "Group invite saved. Auto sending updates the live board. Pin that board link once in WhatsApp. This app does not sign in to your WhatsApp."
+          : next.whatsappGroupWebhook
+            ? "Group webhook saved. Auto sending will post there without a WhatsApp login."
+            : "WhatsApp group link cleared.",
+      );
       setError("");
     } catch (err) {
       setError(err.message);
@@ -155,8 +162,15 @@ export function WeatherAlerts() {
       <section className="form-card">
         <h2>WhatsApp group</h2>
         <p className="lede">
-          Alerts are posted to the group through a webhook. This app does not sign in to your personal WhatsApp. Paste the
-          webhook from the bot or automation that is already a member of the group. It receives JSON with a text field.
+          WhatsApp will not accept posts to a chat.whatsapp.com invite, and this app will not sign in to your personal WhatsApp
+          or to a business WhatsApp number. Paste the group invite anyway. Auto sending writes each heat, rain, or wind
+          message to the live board. Pin that board link once in the group. Anyone in the group can open it. No further
+          taps are needed.
+        </p>
+        <p>
+          <a href="/weather/board">Open the live board</a>
+          {" · "}
+          Copy this into the WhatsApp group once: {typeof window !== "undefined" ? `${window.location.origin}/weather/board` : "/weather/board"}
         </p>
         <form className="form-grid" onSubmit={saveWhatsAppGroup}>
           <label>
@@ -164,11 +178,11 @@ export function WeatherAlerts() {
             <input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="Yard HSE" />
           </label>
           <label className="wide">
-            <span>Group webhook URL</span>
+            <span>WhatsApp group invite</span>
             <input
-              value={groupWebhook}
-              onChange={(event) => setGroupWebhook(event.target.value)}
-              placeholder="https://hooks.example/whatsapp-group"
+              value={groupInvite}
+              onChange={(event) => setGroupInvite(event.target.value)}
+              placeholder="https://chat.whatsapp.com/…"
               inputMode="url"
             />
           </label>
