@@ -191,6 +191,7 @@ assert(hot.raw.wbgt < 42, "34°C air temperature stays under the WBGT notify lev
 assert(!shouldAutoNotify(alertSignature(calm), hot), "ambient temperature alone should not notify");
 
 const windText = formatWeatherAlert(windStop);
+assert(windText.startsWith("Wind alert"), "a wind alert is titled as wind");
 assert(windText.includes("Wind speed: 50 km/h — STOP"), "wind stop names the exceeded threshold");
 assert(windText.includes("Stop outdoor work."), "wind stop instruction tells crews to stop");
 assert(!windText.includes("Rain"), "a wind-only alert does not mention rain");
@@ -203,6 +204,7 @@ const moderateRain = snapshotForTests({
   weatherCode: 63,
   hasThunder: false,
 });
+assert(formatWeatherAlert(moderateRain).startsWith("Rain alert"), "a rain alert is titled as rain");
 assert(formatWeatherAlert(moderateRain).includes("Rain: 3.0 mm/h — WARN"), "moderate rain names the exceeded threshold");
 assert(formatWeatherAlert(moderateRain).includes("slippery surfaces"), "moderate rain instruction");
 const heavyRain = snapshotForTests({
@@ -241,6 +243,8 @@ const heatDanger = snapshotForTests({
 assert(heatDanger.raw.wbgt >= 42 && heatDanger.raw.wbgt <= 50, "this case sits in the Danger WBGT band");
 assert(shouldAutoNotify(alertSignature(calm), heatDanger), "WBGT of 42°C or higher should notify");
 const dangerText = formatWeatherAlert(heatDanger);
+assert(dangerText.startsWith("Heat stress alert"), "a WBGT alert is titled as heat stress");
+assert(!dangerText.includes("Rain alert"), "a heat stress alert does not use the rain wording");
 assert(dangerText.includes("43.8°C — DANGER"), "Danger row names the WBGT reading");
 assert(dangerText.includes("50% work / 50% rest"), "Danger work/rest cycle is included");
 assert(dangerText.includes("Restrict heavy work"), "Danger action is included");
@@ -272,7 +276,8 @@ const both = snapshotForTests({
   hasThunder: false,
 });
 const bothText = formatWeatherAlert(both);
-assert(bothText.indexOf("Wind speed: 36 km/h — WARN") < bothText.indexOf("Rain: 8.0 mm/h — STOP"), "each exceeded threshold gets its own instruction");
+assert(bothText.indexOf("Wind alert") < bothText.indexOf("Rain alert"), "wind and rain are separate messages");
+assert(!bothText.includes("Heat stress alert"), "a wind and rain alert does not add a heat stress message");
 
 const notifyBefore = weatherAdmin.listNotifications(db).length;
 db.prepare("UPDATE weather_settings SET auto_notify = 0, last_overall_level = ?").run("safe");

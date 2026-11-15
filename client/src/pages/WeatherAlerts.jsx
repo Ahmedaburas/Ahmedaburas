@@ -47,7 +47,7 @@ export function WeatherAlerts() {
       body: JSON.stringify({ autoNotify: !settings.autoNotify }),
     });
     setSettings(next);
-    setMessage(next.autoNotify ? "Auto-notify is on." : "Auto-notify is off.");
+    setMessage(next.autoNotify ? "Auto sending is on." : "Auto sending is off.");
   }
 
   async function saveWhatsAppGroup(event) {
@@ -127,18 +127,15 @@ export function WeatherAlerts() {
         <section className="form-card">
           <h2>Auto-notify</h2>
           <p className="lede">
-            When on, a refresh sends an alert only if wind is at least 32 km/h, rain is at least 2.5 mm/h, or WBGT is at
-            least 42°C, and only when that set changes. Ambient temperature alone does not send. At WBGT 42–50°C the message
-            uses the Danger row: heavy workload, 50% work / 50% rest, restrict heavy work. Above 50°C it uses the Extreme
-            Danger row: suspend outdoor work. Both require 4–6 cups of water per hour. Lightning, humidity, visibility, and
-            feels-like do not send. SMTP and WhatsApp settings come from environment variables on the API host.
+            {settings.autoNotify
+              ? "Auto sending is on. Heat stress, rain, and wind each go out as their own message when that threshold is crossed. You do not need to send them yourself."
+              : "Auto sending is off. Nothing is sent until you turn it on."}
           </p>
           <div className="form-actions">
-            <label className="toggle-row">
-              <input type="checkbox" checked={settings.autoNotify} onChange={toggleAutoNotify} />
-              <span>Auto-notify when wind, rain, or WBGT of 42°C or higher is exceeded</span>
-            </label>
-            <button type="button" className="button" onClick={notifyNow}>
+            <button type="button" className="button" onClick={toggleAutoNotify}>
+              {settings.autoNotify ? "Turn auto sending off" : "Turn auto sending on"}
+            </button>
+            <button type="button" className="button secondary" onClick={notifyNow}>
               Notify now
             </button>
           </div>

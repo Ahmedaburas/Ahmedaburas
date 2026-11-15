@@ -44,9 +44,29 @@ export function safetyInstructions(snapshot) {
   });
 }
 
+const ALERT_TITLES = {
+  wbgt: "Heat stress alert",
+  rain: "Rain alert",
+  wind: "Wind alert",
+};
+
+export function formatWeatherAlerts(snapshot) {
+  const grouped = new Map();
+  for (const item of safetyInstructions(snapshot)) {
+    const title = ALERT_TITLES[item.id] || "Weather alert";
+    if (!grouped.has(title)) grouped.set(title, []);
+    grouped.get(title).push(item);
+  }
+  return [...grouped.entries()].map(([title, items]) => ({
+    title,
+    subject: `SOP-59 ${title}`,
+    text: [title, ...items.map((item) => `${item.label}: ${item.display} — ${item.status}\n${item.text}`)].join("\n"),
+  }));
+}
+
 export function formatWeatherAlert(snapshot) {
-  return safetyInstructions(snapshot)
-    .map((item) => `${item.label}: ${item.display} — ${item.status}\n${item.text}`)
+  return formatWeatherAlerts(snapshot)
+    .map((message) => message.text)
     .join("\n\n");
 }
 
@@ -127,36 +147,38 @@ export async function deliverToContacts(db, snapshot, { prevLevel, manual = fals
     const allowed = new Set(contactIds.map(Number));
     contacts = contacts.filter((row) => allowed.has(row.id));
   }
-  const exceeded = exceededNotifyMetrics(snapshot);
-  const subject = `SOP-59 exceeded: ${exceeded.map((tile) => tile.label).join(", ") || snapshot.location}`;
-  const text = formatWeatherAlert(snapshot);
+  const messages = formatWeatherAlerts(snapshot);
+  const text = messages.map((message) => message.text).join("\n\n");
   const newLevel =
     safetyInstructions(snapshot)
       .map((item) => `${item.label} ${item.status}`)
       .join(", ") || snapshot.overall.level;
   const log = [];
-  for (const contact of contacts) {
-    if (contact.notify_email && contact.email) {
-      const result = await sendEmail({ to: contact.email, subject, text });
-      log.push({ contactId: contact.id, name: contact.name, channel: "email", ...result });
-    }
-    if (contact.notify_whatsapp && contact.whatsapp) {
-      const result = await sendWhatsApp({ to: contact.whatsapp, text });
-      log.push({ contactId: contact.id, name: contact.name, channel: "whatsapp", ...result });
-    }
-  }
   const group = db
     .prepare("SELECT whatsapp_group_name, whatsapp_group_webhook FROM weather_settings WHERE id = 1")
     .get();
   const groupUrl = String(group?.whatsapp_group_webhook || "").trim() || process.env.WHATSAPP_WEBHOOK_URL || "";
-  if (groupUrl) {
-    const webhook = await sendWebhook(text, groupUrl);
-    log.push({
-      contactId: null,
-      name: group?.whatsapp_group_name || "WhatsApp group",
-      channel: "whatsapp-group",
-      ...webhook,
-    });
+  for (const message of messages) {
+    for (const contact of contacts) {
+      if (contact.notify_email && contact.email) {
+        const result = await sendEmail({ to: contact.email, subject: message.subject, text: message.text });
+        log.push({ contactId: contact.id, name: contact.name, channel: "email", alert: message.title, ...result });
+      }
+      if (contact.notify_whatsapp && contact.whatsapp) {
+        const result = await sendWhatsApp({ to: contact.whatsapp, text: message.text });
+        log.push({ contactId: contact.id, name: contact.name, channel: "whatsapp", alert: message.title, ...result });
+      }
+    }
+    if (groupUrl) {
+      const webhook = await sendWebhook(message.text, groupUrl);
+      log.push({
+        contactId: null,
+        name: group?.whatsapp_group_name || "WhatsApp group",
+        channel: "whatsapp-group",
+        alert: message.title,
+        ...webhook,
+      });
+    }
   }
   if (log.length === 0 && manual) {
     log.push({ contactId: null, name: "—", channel: "none", ok: false, detail: "no contacts or channels configured" });
