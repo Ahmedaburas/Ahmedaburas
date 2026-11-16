@@ -18,8 +18,11 @@ function MetaGate({ children }) {
   if (!state.data) {
     return (
       <p className="boot">
-        Cannot reach the Inma Steel HSE service. From the project folder run <code>npm run dev</code>, then refresh.
-        {state.error ? ` ${state.error}` : ""}
+        {state.error || (
+          <>
+            Cannot reach the Inma Steel HSE service. From the project folder run <code>npm run dev</code>, then refresh.
+          </>
+        )}
       </p>
     );
   }

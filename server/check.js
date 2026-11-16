@@ -10,6 +10,7 @@ import {
   scoreWindKmh,
   scoreWbgt,
   snapshotForTests,
+  clearWeatherCache,
 } from "./weather.js";
 import * as weatherAdmin from "./weatherAdmin.js";
 import { formatWeatherAlert, safetyInstructions, shouldAutoNotify } from "./weatherNotify.js";
@@ -359,6 +360,23 @@ assert(inside.notified === false, "lightning, humidity, and light rain should no
 const blocked = await weatherAdmin.notifyNow(db, {});
 assert(blocked.sent === false, "manual notify should stay quiet inside wind, rain, and the WBGT 42°C level");
 delete process.env.HSE_WEATHER_FIXTURE;
+
+const prevFetch = globalThis.fetch;
+globalThis.fetch = async () => {
+  throw new TypeError("fetch failed");
+};
+try {
+  clearWeatherCache();
+  const down = await weatherAdmin.getWeather(db, { force: true });
+  assert(down.source === "unavailable", "Open-Meteo timeout keeps weather offline instead of crashing");
+  assert(down.tiles.length === 9, "offline weather still returns the nine SOP-59 tiles");
+  assert(down.notified === false, "offline weather does not send an alert");
+  const downNotify = await weatherAdmin.notifyNow(db, {});
+  assert(downNotify.sent === false, "manual notify stays quiet when live weather is down");
+} finally {
+  globalThis.fetch = prevFetch;
+  clearWeatherCache();
+}
 
 process.env.HSE_FORMS_FIXTURE = JSON.stringify({
   title: " Near miss Reporting Form (Scan QR Code)",

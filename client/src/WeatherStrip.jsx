@@ -38,7 +38,8 @@ export function WeatherStrip() {
   if (loading && !data) return <p className="quiet">Loading live weather…</p>;
   if (error && !data) return <p className="banner bad">{error}</p>;
 
-  const sourceLabel = data.source === "openweathermap" ? "OPENWEATHERMAP" : "OPEN-METEO";
+  const sourceLabel =
+    data.source === "openweathermap" ? "OPENWEATHERMAP" : data.source === "unavailable" ? "OFFLINE" : "OPEN-METEO";
 
   return (
     <section className="weather-strip block">
@@ -53,6 +54,7 @@ export function WeatherStrip() {
               📍
             </span>
             {data.location} · {data.condition}
+            {data.stale ? " · last reading kept while the live feed is down" : ""}
           </p>
           <p className="quiet">
             Last updated: {formatRiyadh(data.fetchedAt)} · refreshes every {data.refreshSeconds / 60} min ·{" "}

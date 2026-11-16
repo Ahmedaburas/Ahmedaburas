@@ -27,11 +27,9 @@ app.use(express.json({ limit: "5mb" }));
 
 function route(fn) {
   return (req, res, next) => {
-    try {
-      fn(req, res);
-    } catch (error) {
-      next(error);
-    }
+    Promise.resolve()
+      .then(() => fn(req, res))
+      .catch(next);
   };
 }
 

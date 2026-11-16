@@ -238,7 +238,9 @@ async function fetchOpenMeteo() {
     wind_speed_unit: "kmh",
     timezone: "Asia/Riyadh",
   });
-  const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
+  const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, {
+    signal: AbortSignal.timeout(8000),
+  });
   if (!response.ok) throw new Error("Open-Meteo request failed");
   const data = await response.json();
   const c = data.current;
@@ -281,7 +283,9 @@ async function fetchOpenWeather() {
     appid: key,
     units: "metric",
   });
-  const response = await fetch(`https://api.openweathermap.org/data/2.5/weather?${params}`);
+  const response = await fetch(`https://api.openweathermap.org/data/2.5/weather?${params}`, {
+    signal: AbortSignal.timeout(8000),
+  });
   if (!response.ok) throw new Error("OpenWeatherMap request failed");
   const data = await response.json();
   const id = data.weather?.[0]?.id ?? 800;
@@ -312,7 +316,12 @@ async function fetchLiveReading() {
   } catch (error) {
     console.warn("OpenWeatherMap failed, falling back to Open-Meteo", error.message);
   }
-  return fetchOpenMeteo();
+  try {
+    return await fetchOpenMeteo();
+  } catch (error) {
+    console.warn("Open-Meteo failed", error.message);
+    throw error;
+  }
 }
 
 export function getCachedWeather() {
@@ -321,12 +330,78 @@ export function getCachedWeather() {
   return cache.snapshot;
 }
 
+export function getStaleWeather() {
+  return cache?.snapshot || null;
+}
+
+export function clearWeatherCache() {
+  cache = null;
+}
+
+export function unavailableSnapshot(message) {
+  const offline = (id, label) => tile(id, label, "—", "reference", "Live weather is offline", "OFFLINE");
+  return {
+    source: "unavailable",
+    location: JUBAIL.name,
+    condition: "Live weather could not be reached",
+    fetchedAt: new Date().toISOString(),
+    refreshSeconds: REFRESH_MS / 1000,
+    overall: { level: "safe", label: "OFFLINE" },
+    tiles: [
+      offline("wind", "Wind speed"),
+      offline("rain", "Rain"),
+      offline("lightning", "Lightning"),
+      offline("wbgt", "WBGT (Est.)"),
+      offline("temperature", "Temperature"),
+      offline("feels", "Feels like"),
+      offline("visibility", "Visibility"),
+      offline("humidity", "Humidity"),
+      {
+        id: "pressure",
+        label: "Pressure",
+        display: "—",
+        level: "reference",
+        status: "OFFLINE",
+        hint: "Live weather is offline",
+        tone: "info",
+      },
+    ],
+    verifyLinks: VERIFY_LINKS,
+    sop: "INMA-HSE-SOP-59",
+    raw: {
+      windKmh: 0,
+      rainMmH: 0,
+      tempC: 0,
+      feelsC: 0,
+      rh: 0,
+      pressureHpa: 0,
+      visibilityM: null,
+      wbgt: null,
+      hasThunder: false,
+      weatherCode: 0,
+    },
+    unavailable: true,
+    fetchError: message || "Live weather could not be reached",
+  };
+}
+
 export async function refreshWeatherReading({ force = false } = {}) {
   if (!force && cache && Date.now() - cache.at < REFRESH_MS) return cache.snapshot;
-  const reading = await fetchLiveReading();
-  const snapshot = buildSnapshot(reading);
-  cache = { at: Date.now(), snapshot, reading };
-  return snapshot;
+  try {
+    const reading = await fetchLiveReading();
+    const snapshot = buildSnapshot(reading);
+    cache = { at: Date.now(), snapshot, reading };
+    return snapshot;
+  } catch (error) {
+    if (cache?.snapshot && !cache.snapshot.unavailable) {
+      console.warn("Weather refresh failed, using last reading", error.message);
+      return { ...cache.snapshot, stale: true, fetchError: error.message };
+    }
+    console.warn("Weather refresh failed", error.message);
+    const snapshot = unavailableSnapshot(error.message);
+    cache = { at: Date.now(), snapshot, reading: null };
+    return snapshot;
+  }
 }
 
 export function snapshotForTests(reading) {

@@ -1,6 +1,12 @@
 import { HttpError } from "./domain.js";
 import { deliverToContacts, formatWeatherAlert, formatWeatherAlerts, shouldAutoNotify } from "./weatherNotify.js";
-import { alertSignature, exceededNotifyMetrics, getCachedWeather, refreshWeatherReading } from "./weather.js";
+import {
+  alertSignature,
+  exceededNotifyMetrics,
+  getCachedWeather,
+  refreshWeatherReading,
+  unavailableSnapshot,
+} from "./weather.js";
 
 function rowToContact(row) {
   return {
@@ -193,12 +199,17 @@ export async function getWeather(db, { force = false } = {}) {
   let refreshed = false;
   if (cached) snapshot = cached;
   else {
-    snapshot = await refreshWeatherReading({ force: true });
-    refreshed = true;
+    try {
+      snapshot = await refreshWeatherReading({ force: true });
+      refreshed = !snapshot.stale && !snapshot.unavailable;
+    } catch (error) {
+      console.warn("Weather refresh failed", error.message);
+      snapshot = unavailableSnapshot(error.message);
+    }
   }
   const settings = getSettings(db);
   let notified = false;
-  if (refreshed) {
+  if (refreshed && !snapshot.unavailable && !snapshot.stale) {
     const signature = alertSignature(snapshot);
     if (settings.autoNotify && shouldAutoNotify(settings.lastAlertSignature, snapshot)) {
       await deliverToContacts(db, snapshot, { prevLevel: settings.lastAlertSignature, manual: false });
@@ -220,7 +231,23 @@ export async function getWeather(db, { force = false } = {}) {
 }
 
 export async function notifyNow(db, { groupIds = [] } = {}) {
-  const snapshot = getCachedWeather() || (await refreshWeatherReading({ force: false }));
+  let snapshot;
+  try {
+    snapshot = getCachedWeather() || (await refreshWeatherReading({ force: false }));
+  } catch (error) {
+    return {
+      sent: false,
+      reason: "Live weather could not be reached. No alert sent.",
+      log: [],
+    };
+  }
+  if (snapshot.unavailable) {
+    return {
+      sent: false,
+      reason: "Live weather could not be reached. No alert sent.",
+      log: [],
+    };
+  }
   const settings = getSettings(db);
   let contactIds = null;
   if (groupIds.length) {

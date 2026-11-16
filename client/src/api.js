@@ -29,7 +29,13 @@ export async function request(url, options = {}) {
       data = { error: text.slice(0, 200) };
     }
   }
-  if (!response.ok) throw new ApiError(data?.error || `Request failed (${response.status})`, response.status);
+  if (!response.ok) {
+    const fallback =
+      response.status >= 500
+        ? `The HSE API on port 3001 is not responding (${response.status}). From the project folder run npm run dev, then refresh.`
+        : `Request failed (${response.status})`;
+    throw new ApiError(data?.error || fallback, response.status);
+  }
   return data;
 }
 
