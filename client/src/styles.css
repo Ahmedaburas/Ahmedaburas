@@ -282,8 +282,11 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .dot.warn { background: #c48a16; }
 .dot.caution { background: #d4a017; }
 .dot.good { background: var(--good); }
+.weather-head-actions { display: flex; align-items: center; gap: 0.45rem; flex-shrink: 0; }
 .weather-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.45rem; }
 .weather-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+.weather-user { justify-content: space-between; }
+.weather-user-actions { display: inline-flex; gap: 0.35rem; margin-left: auto; }
 .toggle-row { flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 600; }
 .toggle-row input { width: auto; }
 .chip-row .inline, .group-pick .inline { flex-direction: row; align-items: center; gap: 0.35rem; font-weight: 500; display: inline-flex; margin-right: 0.75rem; }

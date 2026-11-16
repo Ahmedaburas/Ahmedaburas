@@ -1,5 +1,7 @@
 import { HttpError } from "./domain.js";
+import { listPeople } from "./records.js";
 import { deliverToContacts, formatWeatherAlert, formatWeatherAlerts, shouldAutoNotify } from "./weatherNotify.js";
+import { exportWeatherWorkbook, weatherReportFilename } from "./weatherReport.js";
 import {
   alertSignature,
   exceededNotifyMetrics,
@@ -116,6 +118,43 @@ export function updateSettings(db, body) {
 
 export function listContacts(db) {
   return db.prepare("SELECT * FROM weather_contacts ORDER BY name").all().map(rowToContact);
+}
+
+export function getContact(db, id) {
+  const row = db.prepare("SELECT * FROM weather_contacts WHERE id = ?").get(id);
+  return row ? rowToContact(row) : null;
+}
+
+export function resolveReportRecipient(db, query = {}) {
+  const contactId = Number(query.contactId || 0);
+  if (contactId) {
+    const contact = getContact(db, contactId);
+    if (!contact) throw new HttpError(404, "Contact not found");
+    return contact;
+  }
+  const personId = Number(query.personId || 0);
+  if (personId) {
+    const person = listPeople(db).find((row) => row.id === personId);
+    if (!person) throw new HttpError(404, "Person not found");
+    const linked = listContacts(db).find((row) => row.personId === personId);
+    return {
+      id: linked?.id || null,
+      name: person.name,
+      personId: person.id,
+      email: linked?.email || person.email,
+      whatsapp: linked?.whatsapp || "",
+      notifyEmail: linked ? linked.notifyEmail : true,
+      notifyWhatsapp: linked ? linked.notifyWhatsapp : false,
+      jobTitle: person.jobTitle,
+    };
+  }
+  return null;
+}
+
+export function exportWeatherReport(db, snapshot, query = {}) {
+  const recipient = resolveReportRecipient(db, query);
+  const buffer = exportWeatherWorkbook(snapshot, { recipient, settings: getSettings(db) });
+  return { buffer, filename: weatherReportFilename(recipient), recipient };
 }
 
 export function createContact(db, body) {

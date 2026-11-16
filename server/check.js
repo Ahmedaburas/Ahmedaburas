@@ -301,11 +301,21 @@ await weatherAdmin.getWeather(db, { force: true });
 const notifyAfter = weatherAdmin.listNotifications(db).length;
 assert(notifyBefore === notifyAfter, "auto-notify off should not log sends");
 delete process.env.HSE_WEATHER_FIXTURE;
-weatherAdmin.createContact(db, {
+const weatherContact = weatherAdmin.createContact(db, {
   name: "Weather check",
   email: "weather-check@example.com",
   notifyEmail: true,
 });
+const weatherXlsx = weatherAdmin.exportWeatherReport(db, windStop, { contactId: weatherContact.id });
+assert(weatherXlsx.buffer.slice(0, 2).toString() === "PK", "the weather report is an Excel workbook");
+assert(weatherXlsx.filename.includes("weather-check"), "the weather report is named for the user");
+assert(weatherXlsx.buffer.length > 800, "the weather report contains readings");
+const siteXlsx = weatherAdmin.exportWeatherReport(db, windStop, {});
+assert(siteXlsx.filename.includes("site"), "the site weather report has a site filename");
+const people = db.prepare("SELECT id, name FROM people ORDER BY id").all();
+assert(people.length > 0, "directory people exist for per-user reports");
+const personXlsx = weatherAdmin.exportWeatherReport(db, windStop, { personId: people[0].id });
+assert(personXlsx.recipient.name === people[0].name, "a directory user can download their weather report");
 const inviteSaved = weatherAdmin.updateSettings(db, {
   whatsappGroupName: "Yard HSE",
   whatsappGroupWebhook: "https://chat.whatsapp.com/InviteCode",

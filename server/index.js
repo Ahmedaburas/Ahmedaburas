@@ -92,6 +92,17 @@ app.put(
 );
 
 app.get(
+  "/api/weather/report.xlsx",
+  route(async (req, res) => {
+    const weather = await weatherAdmin.getWeather(db);
+    const report = weatherAdmin.exportWeatherReport(db, weather, req.query);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${report.filename}"`);
+    res.send(report.buffer);
+  }),
+);
+
+app.get(
   "/api/weather/contacts",
   route((_req, res) => {
     sendList(res, weatherAdmin.listContacts(db));
@@ -106,6 +117,17 @@ app.post(
     } catch (error) {
       throw new HttpError(400, error.message);
     }
+  }),
+);
+
+app.get(
+  "/api/weather/contacts/:id/report.xlsx",
+  route(async (req, res) => {
+    const weather = await weatherAdmin.getWeather(db);
+    const report = weatherAdmin.exportWeatherReport(db, weather, { contactId: idOf(req) });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${report.filename}"`);
+    res.send(report.buffer);
   }),
 );
 

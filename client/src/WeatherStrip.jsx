@@ -63,9 +63,14 @@ export function WeatherStrip() {
             <Link to="/weather/board">Live board</Link>
           </p>
         </div>
-        <button type="button" className="button secondary weather-refresh" onClick={() => load(true)} aria-label="Refresh weather">
-          ↻
-        </button>
+        <div className="weather-head-actions">
+          <a className="button secondary" href="/api/weather/report.xlsx">
+            Download report
+          </a>
+          <button type="button" className="button secondary weather-refresh" onClick={() => load(true)} aria-label="Refresh weather">
+            ↻
+          </button>
+        </div>
       </div>
       <div className="weather-grid">
         {data.tiles.map((tile) => (
