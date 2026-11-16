@@ -73,13 +73,30 @@ function shortLabel(grain, label) {
   return label;
 }
 
+const GRAIN_KEYS = { year: "years", quarter: "quarters", month: "months" };
+
 function TimelineBar({ timeline, applied }) {
   const [params, setParams] = useSearchParams();
   const grain = ["year", "quarter", "month"].includes(params.get("grain")) ? params.get("grain") : "month";
-  const rows = timeline?.[{ year: "years", quarter: "quarters", month: "months" }[grain]] || [];
+  const rows = timeline?.[GRAIN_KEYS[grain]] || [];
   const max = Math.max(1, ...rows.map((row) => row.count));
 
   function setGrain(nextGrain) {
+    const nextRows = timeline?.[GRAIN_KEYS[nextGrain]] || [];
+    if (params.get("from") && params.get("to")) {
+      const from = params.get("from");
+      const to = params.get("to");
+      const exact = nextRows.find((row) => row.from === from && row.to === to);
+      if (exact) {
+        patchParams(params, setParams, { grain: nextGrain });
+        return;
+      }
+      const parent = nextRows.find((row) => from >= row.from && to <= row.to);
+      if (parent) {
+        patchParams(params, setParams, { grain: nextGrain, from: parent.from, to: parent.to });
+        return;
+      }
+    }
     patchParams(params, setParams, { grain: nextGrain });
   }
 
@@ -146,7 +163,57 @@ function TimelineBar({ timeline, applied }) {
   );
 }
 
-function SeverityDonut({ rows, selectedId, onSelect }) {
+function TimelineLine({ months, applied, onSelect, picked }) {
+  if (!months?.length) return null;
+  const width = 720;
+  const height = 168;
+  const pad = { left: 28, right: 12, top: 18, bottom: 32 };
+  const max = Math.max(1, ...months.map((row) => row.count));
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const points = months.map((row, index) => {
+    const x = pad.left + (months.length === 1 ? innerW / 2 : (index / (months.length - 1)) * innerW);
+    const y = pad.top + innerH - (row.count / max) * innerH;
+    return { ...row, x, y, year: String(row.id).slice(0, 4) };
+  });
+  const path = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  return (
+    <section className="block timeline-line-block">
+      <h3>Near misses over time</h3>
+      <p className="quiet">Line follows the same 2025–2026 counts as the bars. Click a point to filter the pie and other charts.</p>
+      <svg className="timeline-line" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Near misses by month">
+        <path d={path} className="timeline-line-path" />
+        {points.map((point) => {
+          const selected = picked && applied?.from === point.from && applied?.to === point.to;
+          const contained = picked && !selected && applied?.from && point.from >= applied.from && point.to <= applied.to;
+          return (
+            <g key={point.id}>
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r={selected ? 6 : 4.5}
+                className={`timeline-line-dot year-${point.year} ${selected ? "selected" : ""} ${contained ? "contained" : ""}`}
+                onClick={() => onSelect(point)}
+              >
+                <title>{`${point.label}: ${point.count}`}</title>
+              </circle>
+              {point.count > 0 ? (
+                <text x={point.x} y={point.y - 8} className="timeline-line-count">
+                  {point.count}
+                </text>
+              ) : null}
+              <text x={point.x} y={height - 8} className="timeline-line-label">
+                {shortLabel("month", point.label)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </section>
+  );
+}
+
+function SeverityDonut({ rows, selectedId, onSelect, paramKey = "nmSeverity" }) {
   const total = rows.reduce((sum, row) => sum + row.count, 0);
   const colors = {
     low: "#1f7a4d",
@@ -154,6 +221,9 @@ function SeverityDonut({ rows, selectedId, onSelect }) {
     high: "#c2410c",
     critical: "#9d261e",
     unspecified: "#8a8181",
+    "year-2025": "#8a5a08",
+    "year-2026": "#1f6f8a",
+    "year-2024": "#5f5757",
   };
   let cursor = 0;
   const stops = rows
@@ -187,7 +257,7 @@ function SeverityDonut({ rows, selectedId, onSelect }) {
                 type="button"
                 className={`legend-btn ${selected ? "selected" : ""}`}
                 aria-pressed={selected}
-                onClick={() => onSelect("nmSeverity", row.id)}
+                onClick={() => onSelect(paramKey, row.id)}
               >
                 <span className={`dot-swatch sev ${row.id}`} />
                 {row.label} · {row.count}
@@ -334,6 +404,14 @@ export function NearMissFormPanel({ query }) {
       </div>
       {error ? <Banner>{error}</Banner> : null}
       {stats.timeline ? <TimelineBar timeline={stats.timeline} applied={data.applied} /> : null}
+      {stats.timeline?.months?.length ? (
+        <TimelineLine
+          months={stats.timeline.months}
+          applied={data.applied}
+          picked={Boolean(params.get("from"))}
+          onSelect={(row) => patchParams(params, setParams, { from: row.from, to: row.to, grain: "month" })}
+        />
+      ) : null}
       <ActiveFilters applied={data.applied} stats={stats} />
       <div className="kpi-grid form-kpis">
         <article className="kpi tone-info">
@@ -367,6 +445,20 @@ export function NearMissFormPanel({ query }) {
         {form.lastSyncError ? ` ${form.lastSyncError}` : ""}
       </p>
       <div className="form-charts">
+        <section className="block">
+          <h3>By year</h3>
+          <SeverityDonut
+            rows={(stats.byYear || []).map((row) => ({ ...row, id: `year-${row.id}` }))}
+            selectedId={stats.selected?.grain === "year" ? `year-${stats.selected.id}` : ""}
+            onSelect={(_key, id) => {
+              const year = (stats.byYear || []).find((row) => `year-${row.id}` === id);
+              if (!year) return;
+              const selected = data.applied.from === year.from && data.applied.to === year.to;
+              if (selected) patchParams(params, setParams, { from: null, to: null, grain: "year" });
+              else patchParams(params, setParams, { from: year.from, to: year.to, grain: "year" });
+            }}
+          />
+        </section>
         <section className="block">
           <h3>By severity</h3>
           <SeverityDonut rows={stats.bySeverity} selectedId={params.get("nmSeverity")} onSelect={toggleChip} />

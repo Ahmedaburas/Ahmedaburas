@@ -2,6 +2,7 @@ import {
   ENUMS,
   HttpError,
   camel,
+  clipRange,
   defaultFrom,
   eachMonth,
   eachQuarter,
@@ -11,6 +12,7 @@ import {
   monthLabel,
   monthRange,
   nowIso,
+  occurredDay,
   quarterLabel,
   quarterRange,
   resolvePeriod,
@@ -417,8 +419,8 @@ export async function syncFormResponses(db) {
 }
 
 function inPeriod(date, from, to) {
-  if (!date) return false;
-  const day = String(date).slice(0, 10);
+  const day = occurredDay(date);
+  if (!day) return false;
   return day >= from && day <= to;
 }
 
@@ -532,14 +534,11 @@ function applyNearMissChips(rows, chips) {
 
 function timelineSpan(rows, period) {
   const end = today();
-  const days = rows
-    .map((row) => String(row.occurredAt || "").slice(0, 10))
-    .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day))
-    .sort();
-  const starts = [defaultFrom(end), period.from];
-  if (days[0]) starts.push(days[0]);
-  starts.sort();
-  return { from: starts[0], to: end < period.to ? period.to : end };
+  const days = rows.map((row) => occurredDay(row.occurredAt)).filter(Boolean).sort();
+  const first = days[0] || period.from || defaultFrom(end);
+  const last = days[days.length - 1];
+  const to = [end, period.to, last].filter(Boolean).sort().at(-1);
+  return { from: `${first.slice(0, 7)}-01`, to };
 }
 
 function buildTimeline(rows, spanFrom, spanTo) {
@@ -547,13 +546,14 @@ function buildTimeline(rows, spanFrom, spanTo) {
     return rows.filter((row) => inPeriod(row.occurredAt, start, end)).length;
   }
   function bucket(id, grain, label, range) {
+    const click = clipRange(range, spanFrom, spanTo);
     return {
       id,
       grain,
       label,
-      from: range.from,
-      to: range.to,
-      count: countBetween(range.from, range.to),
+      from: click.from,
+      to: click.to,
+      count: countBetween(click.from, click.to),
     };
   }
   return {
@@ -582,7 +582,7 @@ function buildStats(rows, from, to, { timeline, scope = {}, chips = {} } = {}) {
   const bySeverity = {};
   const byLocation = {};
   for (const row of period) {
-    const month = String(row.occurredAt).slice(0, 7);
+    const month = occurredDay(row.occurredAt).slice(0, 7);
     if (month in byMonthMap) byMonthMap[month] += 1;
     addCount(byCategory, row.category);
     addCount(bySeverity, row.severity);
@@ -593,7 +593,7 @@ function buildStats(rows, from, to, { timeline, scope = {}, chips = {} } = {}) {
   return {
     total: rows.length,
     periodTotal: period.length,
-    thisMonth: period.filter((row) => String(row.occurredAt).slice(0, 7) === thisMonth).length,
+    thisMonth: period.filter((row) => occurredDay(row.occurredAt).slice(0, 7) === thisMonth).length,
     highCritical,
     timeline,
     selected: timeline ? selectedFromTimeline(timeline, from, to) : null,
@@ -603,6 +603,13 @@ function buildStats(rows, from, to, { timeline, scope = {}, chips = {} } = {}) {
       severity: chips.nmSeverity,
       category: chips.nmCategory,
     }),
+    byYear: (timeline?.years || []).map((row) => ({
+      id: row.id,
+      label: row.label,
+      count: row.count,
+      from: row.from,
+      to: row.to,
+    })),
     byMonth: Object.entries(byMonthMap).map(([month, count]) => ({
       id: month,
       label: monthLabel(month),

@@ -176,7 +176,19 @@ export const RISK_REGISTER_STATUSES = ["in_review", "approved", "review_due"];
 export const PERMIT_OPEN_STATUSES = ["approved", "active", "suspended"];
 
 export function today() {
-  return new Date().toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh" }).format(new Date());
+}
+
+export function occurredDay(value) {
+  const day = String(value || "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : "";
+}
+
+export function clipRange(range, spanFrom, spanTo) {
+  const from = range.from < spanFrom ? spanFrom : range.from;
+  const to = range.to > spanTo ? spanTo : range.to;
+  if (from > to) return { from: spanFrom, to: spanTo };
+  return { from, to };
 }
 
 export function nowIso() {

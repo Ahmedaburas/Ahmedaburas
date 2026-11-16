@@ -44,7 +44,7 @@ function KpiCard({ card }) {
   );
 }
 
-function Trend({ trend }) {
+function Trend({ trend, applied }) {
   const max = Math.max(1, ...trend.months.flatMap((month) => month.metrics.map((metric) => metric.count)));
   return (
     <section className="block">
@@ -56,8 +56,10 @@ function Trend({ trend }) {
       </div>
       <div className="trend-scroll">
         <div className="trend">
-          {trend.months.map((month) => (
-            <div key={month.month} className="trend-col">
+          {trend.months.map((month) => {
+            const inSelection = !applied?.from || (month.month >= applied.from.slice(0, 7) && month.month <= applied.to.slice(0, 7));
+            return (
+            <div key={month.month} className={`trend-col ${inSelection ? "in-range" : "out-range"}`}>
               <div className="trend-bars">
                 {month.metrics.map((metric) => (
                   <Link
@@ -73,7 +75,8 @@ function Trend({ trend }) {
               </div>
               <div className="trend-label">{month.label}</div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
@@ -237,7 +240,7 @@ export function Dashboard() {
               ))}
             </div>
           </section>
-          <Trend trend={data.trend} />
+          <Trend trend={data.trend} applied={data.applied} />
           <div className="two">
             <Breakdown title="By site" caption={data.bySite.caption} rows={data.bySite.rows} />
             <Breakdown title="By department" caption={data.byDepartment.caption} rows={data.byDepartment.rows} />

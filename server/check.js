@@ -105,7 +105,7 @@ const expect = {
   incidents: 9,
   audits: 6,
   "open-actions": 14,
-  "overdue-actions": 6,
+  "overdue-actions": 7,
   "overdue-permits": 3,
   "open-findings": 7,
   "elevated-risks": 4,
@@ -376,6 +376,24 @@ assert(sumGrain(formBefore.stats.timeline.years) === 23, "year timeline matches 
 assert(sumGrain(formBefore.stats.timeline.quarters) === 23, "quarter timeline matches the period");
 assert(sumGrain(formBefore.stats.timeline.months) === 23, "month timeline matches the period");
 assert(formBefore.stats.timeline.years.length >= 1 && formBefore.stats.timeline.quarters.length >= 1, "timeline has year and quarter bars");
+const year2025 = formBefore.stats.timeline.years.find((row) => row.id === "2025");
+const year2026 = formBefore.stats.timeline.years.find((row) => row.id === "2026");
+assert(year2025?.count === 1, "2025 holds the December 2025 near miss");
+assert(year2026?.count === 22, "2026 holds the rest of the register");
+assert(formBefore.stats.byYear.find((row) => row.id === "2025")?.count === 1, "year pie matches the 2025 bar");
+assert(formBefore.stats.byYear.find((row) => row.id === "2026")?.count === 22, "year pie matches the 2026 bar");
+assert(formBefore.stats.timeline.months.find((row) => row.id === "2025-12")?.count === 1, "December 2025 is on the line chart");
+const y2025 = await forms.getNearMissForm(db, { from: year2025.from, to: year2025.to });
+assert(y2025.stats.periodTotal === 1, "selecting 2025 filters KPIs to that year");
+assert(y2025.stats.bySeverity.find((row) => row.id === "medium")?.count === 1, "2025 pie is the medium December record");
+assert(y2025.stats.byCategory.find((row) => row.id === "housekeeping")?.count === 1, "2025 category chart matches the record");
+assert(sumGrain(y2025.stats.bySeverity) === 1, "severity slices sum to the 2025 total");
+assert(y2025.stats.timeline.years.find((row) => row.id === "2026")?.count === 22, "2026 stays on the year chart after 2025 is selected");
+const y2026 = await forms.getNearMissForm(db, { from: year2026.from, to: year2026.to });
+assert(y2026.stats.periodTotal === 22, "selecting 2026 filters KPIs to that year");
+assert(sumGrain(y2026.stats.bySeverity) === 22, "2026 severity pie sums to 22");
+assert(headline(buildKpis(db, { from: year2026.from, to: year2026.to }), "near-misses").count === 22, "dashboard KPI matches the 2026 timeline bar");
+assert(headline(buildKpis(db, { from: year2025.from, to: year2025.to }), "near-misses").count === 1, "dashboard KPI matches the 2025 timeline bar");
 const octoberRegister = await forms.getNearMissForm(db, { from: "2026-10-01", to: "2026-10-31" });
 assert(octoberRegister.stats.periodTotal === 2, "October KPI uses October near misses");
 assert(octoberRegister.stats.timeline.months.length > 1, "timeline keeps every month after a bar is selected");
