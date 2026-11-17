@@ -71,7 +71,7 @@ export function start() {
   const host = process.env.HOST || '127.0.0.1';
   const { server } = createServer();
   server.listen(port, host, () => {
-    console.log(`HSE Ledger listening on http://${host}:${port}`);
+    console.log(`Ahmed-HSE App listening on http://${host}:${port}`);
   });
 }
 

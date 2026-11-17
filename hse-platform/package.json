@@ -1,8 +1,14 @@
 {
-  "name": "hse-ledger",
+  "name": "ahmed-hse-app",
   "private": true,
   "type": "module",
-  "description": "HSE management platform for a steel fabrication yard: incidents, observations, risk assessments, permits, inspections, actions, training, and heat stress.",
+  "description": "Ahmed-HSE App — HSE management platform for a steel fabrication yard, linked to github.com/Ahmedaburas/Ahmedaburas.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ahmedaburas/Ahmedaburas.git",
+    "directory": "hse-platform"
+  },
+  "homepage": "https://github.com/Ahmedaburas/Ahmedaburas/tree/main/hse-platform",
   "engines": {
     "node": ">=22.13"
   },

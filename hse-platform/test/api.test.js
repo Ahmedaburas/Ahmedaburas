@@ -202,7 +202,7 @@ test('risk, inspection, action, and hours updates change the register', async ()
 
     const page = await fetch(`${base}/`);
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /HSE Ledger/);
+    assert.match(await page.text(), /Ahmed-HSE App/);
     const missing = await send(base, '/api/does-not-exist');
     assert.equal(missing.status, 404);
   });
