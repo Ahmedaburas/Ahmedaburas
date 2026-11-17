@@ -7,6 +7,8 @@ import { Browse } from "./pages/Browse.jsx";
 import { CreateForm } from "./pages/Create.jsx";
 import { Dashboard } from "./pages/Dashboard.jsx";
 import { Directory } from "./pages/Directory.jsx";
+import { AuditReportView, AuditReports } from "./pages/AuditReports.jsx";
+import { AutoJsa } from "./pages/AutoJsa.jsx";
 import { WeatherAlerts } from "./pages/WeatherAlerts.jsx";
 import { WeatherBoard } from "./pages/WeatherBoard.jsx";
 import { RecordView } from "./pages/Record.jsx";
@@ -107,6 +109,9 @@ export function App() {
           <Route path="weather" element={<WeatherAlerts />} />
           <Route path="weather/board" element={<WeatherBoard />} />
           <Route path="directory" element={<Directory />} />
+          <Route path="jsa/auto" element={<AutoJsa />} />
+          <Route path="audit-reports" element={<AuditReports />} />
+          <Route path="audit-reports/:id" element={<AuditReportView />} />
           {Object.entries(MODULES).flatMap(([key, module]) => {
             const base = module.path.slice(1);
             return [

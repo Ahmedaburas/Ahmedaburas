@@ -2,6 +2,13 @@
 
 Local health, safety, and environment workspace for Inma Steel Fabricators — near misses, incidents, audits, work permits, job safety analysis, and risk assessments. Brand colours and the company logo follow [inmasteel.com.sa](https://inmasteel.com.sa/). A dashboard reads those records live and every figure links back to the rows it counts.
 
+**Department internal audit reports** and **auto JSA generation** from saved **Saudi Aramco / SABIC / Maaden** templates are included:
+
+| Route | What it does |
+| --- | --- |
+| `/jsa/auto` | Preview and generate a draft JSA from a saved standard job |
+| `/audit-reports` | Create and open internal audit reports tailored by department |
+
 Data is stored in a SQLite file on this machine (`data/hse.sqlite`). The app creates and seeds that file on first launch. No external services or secrets are required. Node.js 22 or newer is required.
 
 The profile note `Jr. Data Analyst.md` is left as it was.

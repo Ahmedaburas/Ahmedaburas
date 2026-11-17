@@ -75,11 +75,11 @@ function place(db, siteId, departmentId) {
   mustExist(db, "departments", departmentId, "Department");
 }
 
-function person(db, id, label) {
+export function person(db, id, label) {
   mustExist(db, "people", id, label);
 }
 
-function withTx(db, fn) {
+export function withTx(db, fn) {
   db.exec("BEGIN");
   try {
     const result = fn();
@@ -95,7 +95,7 @@ function withTx(db, fn) {
   }
 }
 
-function addEvent(db, entityType, entityId, fromStatus, toStatus, actorId, note, createdAt) {
+export function addEvent(db, entityType, entityId, fromStatus, toStatus, actorId, note, createdAt) {
   insertRow(db, "status_events", {
     entity_type: entityType,
     entity_id: entityId,
@@ -616,7 +616,7 @@ export function hoursInPeriod(db, { from, to, siteId }) {
   return total;
 }
 
-function sharedPlace(db, body) {
+export function sharedPlace(db, body) {
   const siteId = reqId(body.siteId, "Site");
   const departmentId = reqId(body.departmentId, "Department");
   place(db, siteId, departmentId);
