@@ -1,0 +1,13 @@
+{
+  "name": "hse-ledger",
+  "private": true,
+  "type": "module",
+  "description": "HSE management platform for a steel fabrication yard: incidents, observations, risk assessments, permits, inspections, actions, training, and heat stress.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --experimental-sqlite src/server.js",
+    "test": "node --experimental-sqlite --test"
+  }
+}
