@@ -13,25 +13,28 @@ function setParam(params, setParams, key, value) {
   setParams(next);
 }
 
-function KpiCard({ card }) {
+const SPOTLIGHT = ["near-misses", "incidents", "open-actions", "overdue-actions", "open-findings", "elevated-risks"];
+
+function KpiCard({ card, compact }) {
   const inner = (
     <>
       <h3>{card.label}</h3>
       <p className="kpi-value">{card.display}</p>
-      <p className="kpi-hint">{card.hint}</p>
+      {compact ? null : <p className="kpi-hint">{card.hint}</p>}
     </>
   );
+  const className = `kpi tone-${card.tone || "info"}${compact ? " compact" : ""}`;
   if (card.href && !card.links) {
     return (
-      <Link className={`kpi tone-${card.tone || "info"}`} to={card.href}>
+      <Link className={className} to={card.href}>
         {inner}
       </Link>
     );
   }
   return (
-    <article className={`kpi tone-${card.tone || "info"}`}>
+    <article className={className}>
       {inner}
-      {card.links ? (
+      {!compact && card.links ? (
         <div className="kpi-links">
           {card.links.map((item) => (
             <Link key={item.href + item.label} to={item.href}>
@@ -44,12 +47,21 @@ function KpiCard({ card }) {
   );
 }
 
+function KpiGrid({ cards, compact }) {
+  return (
+    <div className={`kpi-grid${compact ? " compact" : ""}`}>
+      {cards.map((card) => (
+        <KpiCard key={card.id} card={card} compact={compact} />
+      ))}
+    </div>
+  );
+}
+
 function Trend({ trend, applied }) {
   const max = Math.max(1, ...trend.months.flatMap((month) => month.metrics.map((metric) => metric.count)));
   return (
     <section className="block">
       <h2>Monthly trend</h2>
-      <p className="quiet">{trend.caption}</p>
       <div className="legend">
         <span className="swatch nearMisses" /> Near misses
         <span className="swatch incidents" /> Incidents
@@ -163,17 +175,15 @@ export function Dashboard() {
   const data = state.data;
   const from = params.get("from") || data?.applied.from || "";
   const to = params.get("to") || data?.applied.to || "";
-  const period = data ? data.headlines.filter((card) => card.group === "period") : [];
-  const workload = data ? data.headlines.filter((card) => card.group === "workload") : [];
+  const headlines = data?.headlines || [];
+  const spotlight = headlines.filter((card) => SPOTLIGHT.includes(card.id));
+  const morePeriod = headlines.filter((card) => card.group === "period" && !SPOTLIGHT.includes(card.id));
+  const moreWorkload = headlines.filter((card) => card.group === "workload" && !SPOTLIGHT.includes(card.id));
 
   return (
-    <>
-      <PageHeader
-        title="Inma Steel · Safety performance"
-        lede="Live counts from near misses, incidents, audits, permits, job safety analyses, and risk assessments. Every number opens the records it counts."
-      />
-      <WeatherStrip />
-      <div className="filters">
+    <div className="dash-home">
+      <PageHeader title="Safety performance" lede="Each figure opens the records it counts." />
+      <div className="filters compact">
         <label>
           <span>Site</span>
           <select value={params.get("siteId") || ""} onChange={(event) => setParam(params, setParams, "siteId", event.target.value)}>
@@ -215,47 +225,51 @@ export function Dashboard() {
       </div>
       {data ? (
         <p className="date-note">
-          Period {formatDate(data.applied.from)} to {formatDate(data.applied.to)}
-          {params.get("from") ? " from the near-miss timeline" : ""}. KPI cards, charts, and records below follow these dates. Open workload ignores this period and stays current.
+          {formatDate(data.applied.from)} – {formatDate(data.applied.to)}
+          {params.get("from") ? " · from the timeline" : ""}
         </p>
       ) : null}
-      <NearMissFormPanel query={query} />
+      <WeatherStrip />
       {state.error ? <Banner>{state.error}</Banner> : null}
       {!data && state.loading ? <p className="quiet">Loading the dashboard…</p> : null}
       {data ? (
+        <section className="dash-section">
+          <h2>At a glance</h2>
+          <KpiGrid cards={spotlight} compact />
+        </section>
+      ) : null}
+      <NearMissFormPanel query={query} />
+      {data ? (
         <>
-          <section className="block">
-            <h2>In the selected period</h2>
-            <div className="kpi-grid">
-              {period.map((card) => (
-                <KpiCard key={card.id} card={card} />
-              ))}
+          <details className="dash-fold">
+            <summary>More figures</summary>
+            <h3>Period</h3>
+            <KpiGrid cards={morePeriod} />
+            <h3>Open workload</h3>
+            <KpiGrid cards={moreWorkload} />
+          </details>
+          <details className="dash-fold">
+            <summary>Trends by site and department</summary>
+            <Trend trend={data.trend} applied={data.applied} />
+            <div className="two">
+              <Breakdown title="By site" caption={data.bySite.caption} rows={data.bySite.rows} />
+              <Breakdown title="By department" caption={data.byDepartment.caption} rows={data.byDepartment.rows} />
             </div>
-          </section>
-          <section className="block">
-            <h2>Open workload</h2>
-            <div className="kpi-grid">
-              {workload.map((card) => (
-                <KpiCard key={card.id} card={card} />
-              ))}
+          </details>
+          <details className="dash-fold">
+            <summary>Status and severity</summary>
+            <div className="two">
+              <Severity title="Near-miss severity" panel={data.severity.nearMisses} />
+              <Severity title="Incident severity" panel={data.severity.incidents} />
+              <Severity title="Open findings" panel={data.severity.findings} />
+              <Severity title="Risk register" panel={data.severity.risks} />
             </div>
-          </section>
-          <Trend trend={data.trend} applied={data.applied} />
-          <div className="two">
-            <Breakdown title="By site" caption={data.bySite.caption} rows={data.bySite.rows} />
-            <Breakdown title="By department" caption={data.byDepartment.caption} rows={data.byDepartment.rows} />
-          </div>
-          <div className="two">
-            <Severity title="Near-miss severity" panel={data.severity.nearMisses} />
-            <Severity title="Incident severity" panel={data.severity.incidents} />
-            <Severity title="Open findings" panel={data.severity.findings} />
-            <Severity title="Risk register" panel={data.severity.risks} />
-          </div>
-          <StatusBoard title="Permits by status" board={data.statusBoards.permits} />
-          <div className="two">
-            <StatusBoard title="Audits by status" board={data.statusBoards.audits} />
-            <StatusBoard title="JSAs by status" board={data.statusBoards.jsas} />
-          </div>
+            <StatusBoard title="Permits by status" board={data.statusBoards.permits} />
+            <div className="two">
+              <StatusBoard title="Audits by status" board={data.statusBoards.audits} />
+              <StatusBoard title="JSAs by status" board={data.statusBoards.jsas} />
+            </div>
+          </details>
           <details className="notes">
             <summary>How these numbers are counted</summary>
             <ul>
@@ -266,6 +280,6 @@ export function Dashboard() {
           </details>
         </>
       ) : null}
-    </>
+    </div>
   );
 }

@@ -2,14 +2,29 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "./api.js";
 
+const PRIMARY = ["wind", "rain", "lightning", "wbgt"];
+const QUIET = new Set(["safe", "ok", "clear", "reference"]);
+
 function formatRiyadh(iso) {
   if (!iso) return "—";
   return new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Riyadh",
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit",
   }).format(new Date(iso));
+}
+
+function Tile({ tile, compact }) {
+  return (
+    <article className={`weather-tile tone-${tile.tone}${compact ? " compact" : ""}`}>
+      <div className="weather-tile-top">
+        <span>{tile.label}</span>
+        <span className="weather-status">{tile.status}</span>
+      </div>
+      <p className="weather-value">{tile.display}</p>
+      {compact ? null : <p className="weather-hint">{tile.hint}</p>}
+    </article>
+  );
 }
 
 export function WeatherStrip() {
@@ -40,9 +55,13 @@ export function WeatherStrip() {
 
   const sourceLabel =
     data.source === "openweathermap" ? "OPENWEATHERMAP" : data.source === "unavailable" ? "OFFLINE" : "OPEN-METEO";
+  const primary = data.tiles.filter((tile) => PRIMARY.includes(tile.id));
+  const rest = data.tiles.filter((tile) => !PRIMARY.includes(tile.id));
+  const raised = rest.filter((tile) => !QUIET.has(tile.level));
+  const more = rest.filter((tile) => QUIET.has(tile.level));
 
   return (
-    <section className="weather-strip block">
+    <section className="weather-strip compact-strip">
       <div className="weather-head">
         <div>
           <div className="weather-title-row">
@@ -50,60 +69,36 @@ export function WeatherStrip() {
             <span className="weather-source">{sourceLabel}</span>
           </div>
           <p className="quiet weather-meta">
-            <span className="weather-pin" aria-hidden="true">
-              📍
-            </span>
-            {data.location} · {data.condition}
-            {data.stale ? " · last reading kept while the live feed is down" : ""}
-          </p>
-          <p className="quiet">
-            Last updated: {formatRiyadh(data.fetchedAt)} · refreshes every {data.refreshSeconds / 60} min ·{" "}
-            <Link to="/weather">Weather alerts</Link>
+            {data.location} · {data.condition} · {formatRiyadh(data.fetchedAt)}
+            {data.stale ? " · last reading" : ""}
             {" · "}
-            <Link to="/weather/board">Live board</Link>
+            <Link to="/weather">Alerts</Link>
           </p>
         </div>
         <div className="weather-head-actions">
-          <a className="button secondary" href="/api/weather/report.xlsx">
-            Download report
+          <a className="button ghost" href="/api/weather/report.xlsx">
+            Report
           </a>
           <button type="button" className="button secondary weather-refresh" onClick={() => load(true)} aria-label="Refresh weather">
             ↻
           </button>
         </div>
       </div>
-      <div className="weather-grid">
-        {data.tiles.map((tile) => (
-          <article key={tile.id} className={`weather-tile tone-${tile.tone}`}>
-            <div className="weather-tile-top">
-              <span>{tile.label}</span>
-              <span className="weather-status">{tile.status}</span>
-            </div>
-            <p className="weather-value">{tile.display}</p>
-            <p className="weather-hint">{tile.hint}</p>
-          </article>
+      <div className="weather-grid compact">
+        {primary.concat(raised).map((tile) => (
+          <Tile key={tile.id} tile={tile} compact />
         ))}
       </div>
-      <div className="weather-foot">
-        <p className="weather-legend">
-          <strong>SOP-59 color guide:</strong>{" "}
-          <span className="dot bad" /> STOP work{" "}
-          <span className="dot warn" /> High risk{" "}
-          <span className="dot caution" /> Caution / warn{" "}
-          <span className="dot good" /> Safe
-        </p>
-        <p className="weather-verify">
-          Verify on official sources:{" "}
-          {data.verifyLinks.map((link, index) => (
-            <span key={link.href}>
-              {index ? " · " : ""}
-              <a href={link.href} target="_blank" rel="noreferrer">
-                {link.label}
-              </a>
-            </span>
-          ))}
-        </p>
-      </div>
+      {more.length ? (
+        <details className="weather-more">
+          <summary>More readings</summary>
+          <div className="weather-grid compact">
+            {more.map((tile) => (
+              <Tile key={tile.id} tile={tile} compact />
+            ))}
+          </div>
+        </details>
+      ) : null}
     </section>
   );
 }
