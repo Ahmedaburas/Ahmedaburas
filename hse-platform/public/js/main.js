@@ -124,7 +124,7 @@ function shell(content, heat, note) {
   return `
     <div class="app">
       <aside class="rail">
-        <a class="brand" href="#/"><span class="brand-mark">H</span><span><strong>HSE Ledger</strong><small>Fabrication yard</small></span></a>
+        <a class="brand" href="#/"><span class="brand-mark">H</span><span><strong>Ahmed-HSE App</strong><small>HSE Ledger · Fabrication yard</small></span></a>
         <nav>${nav}</nav>
         <p class="rail-foot">Sample yard data for a steel fabrication shop. Names and figures are fictional.</p>
       </aside>

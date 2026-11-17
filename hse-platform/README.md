@@ -1,4 +1,6 @@
-# HSE Ledger
+# Ahmed-HSE App · HSE Ledger
+
+GitHub: [Ahmedaburas/Ahmedaburas](https://github.com/Ahmedaburas/Ahmedaburas) · path: `hse-platform/`
 
 Operations register for a steel fabrication yard: incidents, behavior observations, task risk assessments, permits to work, inspections, corrective actions, training cards, and heat-stress readings.
 
