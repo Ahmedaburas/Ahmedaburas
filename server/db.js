@@ -308,6 +308,32 @@ function ensureFormSettings(db) {
   });
 }
 
+function ensureColumn(db, table, name, ddl) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((column) => column.name === name)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
+}
+
+function ensureStandardsSchema(db) {
+  ensureColumn(db, "jsas", "standard_org", "standard_org TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "jsas", "standard_job", "standard_job TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "jsas", "standard_refs", "standard_refs TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "jsas", "generated_from_standard", "generated_from_standard INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "audits", "template_department", "template_department TEXT NOT NULL DEFAULT ''");
+  db.exec(`
+CREATE TABLE IF NOT EXISTS audit_checklist_items (
+  id INTEGER PRIMARY KEY,
+  audit_id INTEGER NOT NULL REFERENCES audits(id) ON DELETE CASCADE,
+  item_no INTEGER NOT NULL,
+  section TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  result TEXT NOT NULL DEFAULT 'pending',
+  note TEXT NOT NULL DEFAULT ''
+);
+`);
+}
+
 export function openDatabase() {
   const configured = process.env.HSE_DB;
   const dbPath = configured || path.join(root, "data", "hse.sqlite");
@@ -318,6 +344,7 @@ export function openDatabase() {
   db.exec(SCHEMA);
   ensureWeatherSettings(db);
   ensureFormSettings(db);
+  ensureStandardsSchema(db);
   const count = db.prepare("SELECT COUNT(*) AS n FROM sites").get().n;
   if (count === 0) seed(db);
   return db;

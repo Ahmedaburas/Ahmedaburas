@@ -549,6 +549,8 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .form-card { background: white; border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem 1rem 1.1rem; box-shadow: var(--shadow); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem 0.9rem; }
 .form-grid .wide { grid-column: 1 / -1; }
+.stack-form label { display: flex; flex-direction: column; gap: 0.35rem; }
+.hint { color: var(--muted); margin: 0.75rem 0 0; }
 .form-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
 .repeater-head { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; }
 .repeat-card { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; }

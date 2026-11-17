@@ -15,6 +15,7 @@ import { buildKpis } from "./kpi.js";
 import * as forms from "./forms.js";
 import * as records from "./records.js";
 import * as weatherAdmin from "./weatherAdmin.js";
+import * as standardsService from "./standardsService.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = path.join(root, "dist");
@@ -58,7 +59,67 @@ app.get(
       labels: { status: STATUS_LABELS },
       transitions: TRANSITIONS,
       enums: ENUMS,
+      standards: standardsService.standardsCatalog().items,
+      auditTemplates: standardsService.auditTemplateCatalog(db).items,
     });
+  }),
+);
+
+app.get(
+  "/api/standards",
+  route((_req, res) => {
+    res.json(standardsService.standardsCatalog());
+  }),
+);
+
+app.get(
+  "/api/standards/:org/jobs/:jobId",
+  route((req, res) => {
+    res.json(standardsService.previewAutoJsa(req.params.org, req.params.jobId));
+  }),
+);
+
+app.post(
+  "/api/jsa/auto-generate",
+  route((req, res) => {
+    res.status(201).json(standardsService.autoGenerateJsa(db, req.body || {}));
+  }),
+);
+
+app.get(
+  "/api/audit-templates",
+  route((_req, res) => {
+    res.json(standardsService.auditTemplateCatalog(db));
+  }),
+);
+
+app.get(
+  "/api/audit-reports",
+  route((_req, res) => {
+    res.json(standardsService.listDepartmentAuditReports(db));
+  }),
+);
+
+app.post(
+  "/api/audit-reports",
+  route((req, res) => {
+    res.status(201).json(standardsService.createDepartmentAudit(db, req.body || {}));
+  }),
+);
+
+app.get(
+  "/api/audits/:id/report",
+  route((req, res) => {
+    const report = standardsService.getAuditReport(db, idOf(req));
+    if (!report) throw new HttpError(404, "Audit not found");
+    res.json(report);
+  }),
+);
+
+app.post(
+  "/api/audits/:id/checklist",
+  route((req, res) => {
+    res.json(standardsService.scoreAuditChecklist(db, idOf(req), req.body || {}));
   }),
 );
 
