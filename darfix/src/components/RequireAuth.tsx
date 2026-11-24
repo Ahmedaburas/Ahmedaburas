@@ -1,0 +1,28 @@
+import { Navigate, useLocation } from 'react-router-dom'
+import { useStore } from '../store/store'
+import type { UserRole } from '../store/types'
+
+export function RequireAuth({
+  roles,
+  children,
+}: {
+  roles: UserRole[]
+  children: React.ReactNode
+}) {
+  const { currentUser } = useStore()
+  const location = useLocation()
+
+  if (!currentUser) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  }
+  if (!roles.includes(currentUser.role)) {
+    const home =
+      currentUser.role === 'admin'
+        ? '/admin'
+        : currentUser.role === 'technician'
+          ? '/tech'
+          : '/app'
+    return <Navigate to={home} replace />
+  }
+  return <>{children}</>
+}

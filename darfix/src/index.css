@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy-950: #061820;
+  --color-navy-900: #0B3A4A;
+  --color-navy-800: #0F4A5C;
+  --color-navy-700: #156074;
+  --color-navy-100: #E6F0F3;
+  --color-teal-600: #0D9488;
+  --color-teal-500: #14B8A6;
+  --color-teal-400: #2DD4BF;
+  --color-teal-50: #F0FDFA;
+  --color-sand-50: #F7FAFB;
+  --color-sand-100: #EEF4F6;
+  --font-sans: "Plus Jakarta Sans", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-arabic: "IBM Plex Sans Arabic", "Plus Jakarta Sans", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  color: var(--color-navy-900);
+  background:
+    radial-gradient(ellipse 80% 50% at 100% -20%, rgba(20, 184, 166, 0.08), transparent),
+    radial-gradient(ellipse 60% 40% at -10% 100%, rgba(11, 58, 74, 0.05), transparent),
+    #ffffff;
+}
+
+html[dir="rtl"] body {
+  font-family: var(--font-arabic);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.45s ease-out both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out both;
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-600 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl border border-navy-100 bg-white px-5 py-2.5 text-sm font-semibold text-navy-900 transition hover:bg-sand-50 active:scale-[0.98];
+}
+
+.btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-navy-700 transition hover:bg-sand-100;
+}
+
+.input-field {
+  @apply w-full rounded-xl border border-navy-100 bg-white px-4 py-2.5 text-sm text-navy-900 outline-none transition placeholder:text-navy-700/40 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20;
+}
+
+.card-surface {
+  @apply rounded-2xl border border-navy-100/80 bg-white shadow-[0_1px_3px_rgba(11,58,74,0.04)];
+}
+
+.label-text {
+  @apply mb-1.5 block text-sm font-medium text-navy-900;
+}
