@@ -77,7 +77,7 @@ export function AdminTechnicians() {
                       ? 'bg-emerald-50 text-emerald-700'
                       : 'bg-slate-100 text-slate-500'
                   }`}
-                  onClick={() => actions.toggleTechnician(tech.id)}
+                  onClick={() => void actions.toggleTechnician(tech.id)}
                 >
                   {tech.active ?? true ? t('active') : t('inactive')}
                 </button>

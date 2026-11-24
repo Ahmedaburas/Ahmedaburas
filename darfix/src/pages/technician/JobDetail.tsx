@@ -2,16 +2,16 @@ import { Camera, MapPin, Phone } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { mapsService } from '../../adapters'
+import { ProcessTracker } from '../../components/ProcessTracker'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../store/store'
 import type { BookingStatus, CostLine, JobPhoto } from '../../store/types'
 
-const TECH_STATUSES: BookingStatus[] = [
-  'on_the_way',
-  'arrived',
-  'in_progress',
-  'completed',
+const TECH_FLOW: { status: BookingStatus; labelKey: string }[] = [
+  { status: 'on_the_way', labelKey: 'onTheWay' },
+  { status: 'arrived', labelKey: 'arrived' },
+  { status: 'in_progress', labelKey: 'inProgress' },
 ]
 
 export function TechJobDetail() {
@@ -19,6 +19,7 @@ export function TechJobDetail() {
   const { state, actions } = useStore()
   const {
     t,
+    locale,
     categoryLabel,
     problemLabel,
     cityLabel,
@@ -36,6 +37,8 @@ export function TechJobDetail() {
   const [extraDesc, setExtraDesc] = useState('')
   const [extraAmount, setExtraAmount] = useState('')
   const [report, setReport] = useState(booking?.jobReport ?? '')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
 
   const mapUrl = useMemo(() => {
     if (!booking?.address.lat) return null
@@ -60,7 +63,7 @@ export function TechJobDetail() {
   const addPhoto = async (kind: JobPhoto['kind'], files: FileList | null) => {
     if (!files?.[0]) return
     const dataUrl = await readFile(files[0])
-    actions.addBookingPhotos(booking.id, [
+    await actions.addBookingPhotos(booking.id, [
       {
         id: `ph-${Date.now()}`,
         kind,
@@ -70,7 +73,7 @@ export function TechJobDetail() {
     ])
   }
 
-  const addCost = () => {
+  const addCost = async () => {
     const amount = Number(costAmount)
     if (!costLabel || !amount) return
     const line: CostLine = {
@@ -79,7 +82,7 @@ export function TechJobDetail() {
       amountSar: amount,
       type: costType,
     }
-    actions.addCosts(booking.id, [line])
+    await actions.addCosts(booking.id, [line])
     setCostLabel('')
     setCostAmount('')
   }
@@ -134,30 +137,61 @@ export function TechJobDetail() {
       <div className="card-surface p-5">
         <h2 className="mb-3 font-semibold text-navy-900">{t('updateStatus')}</h2>
         <div className="flex flex-wrap gap-2">
-          {TECH_STATUSES.map((s) => (
+          {TECH_FLOW.map(({ status, labelKey }) => (
             <button
-              key={s}
+              key={status}
               type="button"
-              className={`btn-secondary ${booking.status === s ? 'border-teal-500 bg-teal-50' : ''}`}
-              onClick={() => {
-                if (s === 'completed') return
-                actions.updateBookingStatus(booking.id, s)
+              className={`btn-secondary ${booking.status === status ? 'border-teal-500 bg-teal-50' : ''}`}
+              disabled={busy || booking.status === 'completed'}
+              onClick={async () => {
+                setBusy(true)
+                const notes: Record<string, string> = {
+                  on_the_way: 'Departed for customer location',
+                  arrived: 'Arrived on site',
+                  in_progress: 'Started work on site',
+                }
+                await actions.updateBookingStatus(booking.id, status, notes[status])
+                setBusy(false)
               }}
-              disabled={s === 'completed'}
             >
-              {s === 'on_the_way'
-                ? t('onTheWay')
-                : s === 'arrived'
-                  ? t('arrived')
-                  : s === 'in_progress'
-                    ? t('inProgress')
-                    : t('completed')}
+              {t(labelKey)}
             </button>
           ))}
         </div>
         <p className="mt-2 text-xs text-navy-700/45">
           {t('completed')} → {t('submitReport')}
         </p>
+      </div>
+
+      <ProcessTracker
+        booking={booking}
+        editableChecklist={booking.status !== 'completed' && booking.status !== 'cancelled'}
+        onToggleChecklist={(itemId, done) => void actions.toggleChecklist(booking.id, itemId, done)}
+      />
+
+      <div className="card-surface p-5">
+        <h2 className="mb-3 font-semibold text-navy-900">
+          {locale === 'ar' ? 'إضافة ملاحظة تقدم' : 'Add progress note'}
+        </h2>
+        <textarea
+          className="input-field min-h-20"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder={locale === 'ar' ? 'مثال: تم استبدال الحنفية، جارٍ الاختبار' : 'e.g. Replaced faucet, testing now'}
+        />
+        <button
+          type="button"
+          className="btn-secondary mt-3"
+          disabled={!note.trim() || busy}
+          onClick={async () => {
+            setBusy(true)
+            await actions.addProcessNote(booking.id, note.trim())
+            setNote('')
+            setBusy(false)
+          }}
+        >
+          {t('submit')}
+        </button>
       </div>
 
       <div className="card-surface p-5">
@@ -226,7 +260,7 @@ export function TechJobDetail() {
             <option value="labor">{t('labor')}</option>
           </select>
         </div>
-        <button type="button" className="btn-secondary mt-3" onClick={addCost}>
+        <button type="button" className="btn-secondary mt-3" onClick={() => void addCost()}>
           {t('addCost')}
         </button>
       </div>
@@ -249,9 +283,9 @@ export function TechJobDetail() {
         <button
           type="button"
           className="btn-secondary mt-3"
-          onClick={() => {
+          onClick={async () => {
             if (!extraDesc || !extraAmount) return
-            actions.requestExtraWork(booking.id, extraDesc, Number(extraAmount))
+            await actions.requestExtraWork(booking.id, extraDesc, Number(extraAmount))
             setExtraDesc('')
             setExtraAmount('')
           }}
@@ -271,7 +305,7 @@ export function TechJobDetail() {
           type="button"
           className="btn-primary mt-3"
           disabled={!report.trim() || booking.status === 'completed'}
-          onClick={() => actions.submitJobReport(booking.id, report)}
+          onClick={() => void actions.submitJobReport(booking.id, report)}
         >
           {t('submitReport')}
         </button>

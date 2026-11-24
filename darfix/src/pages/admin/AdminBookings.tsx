@@ -164,7 +164,9 @@ export function AdminBookingDetail() {
             type="button"
             className="btn-primary"
             disabled={!techId && !booking.technicianId}
-            onClick={() => actions.assignTechnician(booking.id, techId || booking.technicianId!)}
+            onClick={() =>
+              void actions.assignTechnician(booking.id, techId || booking.technicianId!)
+            }
           >
             {booking.technicianId ? t('reassign') : t('assignTechnician')}
           </button>
@@ -172,7 +174,7 @@ export function AdminBookingDetail() {
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => actions.updateBookingStatus(booking.id, 'confirmed')}
+              onClick={() => void actions.updateBookingStatus(booking.id, 'confirmed')}
             >
               {t('confirm')}
             </button>
@@ -222,7 +224,7 @@ export function AdminBookingDetail() {
                   type: 'materials',
                 },
               ]
-              actions.createQuotation(booking.id, lines)
+              void actions.createQuotation(booking.id, lines)
               setQuoteLines({ label: '', amount: '' })
             }}
           >
@@ -233,6 +235,31 @@ export function AdminBookingDetail() {
           {t('total')}: {formatSar(booking.costs.reduce((s, c) => s + c.amountSar, 0))}
         </p>
       </div>
+
+      {booking.process?.currentStepNote && (
+        <div className="card-surface p-5">
+          <h2 className="mb-2 font-semibold">{t('trackStatus')}</h2>
+          <p className="text-sm text-teal-700">{booking.process.currentStepNote}</p>
+          {booking.process.workChecklist?.length > 0 && (
+            <ul className="mt-3 space-y-1 text-sm text-navy-700/70">
+              {booking.process.workChecklist.map((c) => (
+                <li key={c.id}>
+                  {c.done ? '✓' : '○'} {c.label}
+                </li>
+              ))}
+            </ul>
+          )}
+          {booking.process.technicianNotes?.length > 0 && (
+            <div className="mt-4 space-y-2">
+              {[...booking.process.technicianNotes].reverse().map((n) => (
+                <p key={n.id} className="rounded-lg bg-sand-50 px-3 py-2 text-sm">
+                  {n.text}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <Link to="/admin/bookings" className="btn-secondary">
         {t('back')}

@@ -89,8 +89,7 @@ export function AppShell({
               type="button"
               className="btn-ghost"
               onClick={() => {
-                actions.logout()
-                navigate('/login')
+                void actions.logout().then(() => navigate('/login'))
               }}
             >
               <LogOut className="h-4 w-4" />

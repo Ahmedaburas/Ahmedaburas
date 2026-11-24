@@ -10,12 +10,17 @@ npm install
 npm run dev
 ```
 
-Open the URL Vite prints (usually `http://localhost:5173`).
+This starts:
+
+- **API** (Express + SQLite) on `http://127.0.0.1:8787`
+- **Web** (Vite) on `http://127.0.0.1:5173` (proxies `/api` → API)
 
 ```bash
-npm run build   # typecheck + production build
-npm run preview # serve the production build
+npm run build   # frontend typecheck + production build
+npm run start   # API only (after build, serve static separately if needed)
 ```
+
+SQLite database file: `data/darfix.sqlite` (created automatically and seeded on first run).
 
 ## Demo accounts
 
@@ -27,48 +32,65 @@ Password for all: `demo123`
 | Technician  | `tech@darfix.sa`     |
 | Admin       | `admin@darfix.sa`    |
 
-Use the quick-login cards on the login page. State is shared via `localStorage` — a booking created as a customer appears for admin, assignment reaches the technician, and status/notification updates flow back to the customer.
+Use the quick-login cards on the login page. State is shared through the **SQLite backend** — a booking created as a customer appears for admin, assignment reaches the technician, and status/notification updates flow back to the customer (UI also polls every 8s).
 
 Reset demo data from **Admin → Overview → Reset demo data**.
 
 ## Features
 
-- **Customer:** sign up/login, book plumbing or electrical jobs (problem → photos → address → schedule → fee → submit), track status, view technician, approve extra work, pay invoices (mock), rate reviews, WhatsApp support.
-- **Technician:** assigned jobs, customer location/contact, status updates, before/after photos, materials & labor costs, extra-work requests, final job report.
-- **Admin:** overview KPIs, booking assign/reassign, customers, technicians, pricing overrides, reviews, discount codes, reports.
+- **Customer:** sign up/login, book plumbing or electrical jobs, live process tracker (pipeline, ETA, checklist, progress notes), approve extra work, pay invoices (mock), rate reviews, WhatsApp support.
+- **Technician:** assigned jobs, customer location/contact, status updates with notes, checklist, progress notes, before/after photos, materials & labor, extra-work requests, final job report.
+- **Admin:** overview KPIs, booking assign/reassign, process visibility, customers, technicians, pricing overrides, reviews, discount codes, reports.
 - **i18n:** English / Arabic with full RTL layout and language switcher.
 - **Saudi market:** SAR pricing, Saudi cities/districts, `+966` phones.
 
 ## Stack
 
-- Vite + React 19 + TypeScript
-- Tailwind CSS v4
-- React Router
-- `localStorage` persistence (no backend required)
+- **Frontend:** Vite + React 19 + TypeScript + Tailwind CSS v4 + React Router
+- **Backend:** Express + better-sqlite3 + session tokens (Bearer)
+- **Adapters (mock):** payments, notifications, maps — swap later for real providers
 
 ## Project structure
 
 ```
-src/
-  adapters/     # payments, notifications, maps (mock implementations)
-  config/       # service categories & Saudi cities (data-driven)
-  i18n/         # EN/AR dictionaries
-  store/        # types, seed data, React context + localStorage
-  components/   # shared UI
-  pages/        # landing, auth, customer, technician, admin
+darfix/
+  server/           # Express API, SQLite schema, seed
+  data/             # SQLite DB (gitignored)
+  src/
+    api/            # Frontend API client
+    adapters/       # payments, notifications, maps
+    config/         # service categories & Saudi cities
+    i18n/           # EN/AR dictionaries
+    store/          # React context (API-backed)
+    components/     # shared UI + ProcessTracker
+    pages/          # landing, auth, customer, technician, admin
 ```
+
+## API overview
+
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/api/auth/login` | email/password → token |
+| POST | `/api/auth/signup` | create customer |
+| GET | `/api/bootstrap` | full role-scoped state |
+| POST | `/api/bookings` | create booking |
+| PATCH | `/api/bookings/:id/status` | status + process timestamps |
+| POST | `/api/bookings/:id/assign` | admin assign tech |
+| POST | `/api/bookings/:id/process/note` | progress note |
+| PATCH | `/api/bookings/:id/process/checklist` | toggle checklist |
+| POST | `/api/demo/reset` | admin reseeds DB |
+
+Auth: `Authorization: Bearer <token>`.
 
 ## Extension points
 
-| Concern        | Interface / config                         | Swap-in later                          |
-|----------------|--------------------------------------------|----------------------------------------|
-| Payments       | `src/adapters/payments.ts`                 | Moyasar, Tap, Stripe                   |
-| Notifications  | `src/adapters/notifications.ts`            | WhatsApp Business API, SMS, push       |
-| Maps           | `src/adapters/maps.ts`                     | Google Maps / Mapbox                   |
-| Categories     | `src/config/services.ts`                   | Add AC, cleaning, etc. (v1 = plumbing + electrical only) |
-| Persistence    | `src/store/store.tsx` (`STORAGE_KEY`)      | API / SQLite backend                   |
-
-Only plumbing and electrical ship in v1 by design.
+| Concern        | Where                                      | Swap-in later                    |
+|----------------|--------------------------------------------|----------------------------------|
+| Payments       | `src/adapters/payments.ts` + pay endpoint  | Moyasar, Tap, Stripe             |
+| Notifications  | `src/adapters/notifications.ts` + server `notify()` | WhatsApp Business, SMS, push |
+| Maps           | `src/adapters/maps.ts`                     | Google Maps / Mapbox             |
+| Categories     | `src/config/services.ts`                   | Add AC, cleaning (v1 = plumbing + electrical only) |
+| Persistence    | `server/db.ts` (SQLite)                    | Postgres / hosted DB             |
 
 ## Booking statuses
 

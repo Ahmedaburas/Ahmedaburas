@@ -41,7 +41,7 @@ export function AdminPricing() {
                         className="btn-secondary"
                         onClick={() => {
                           const val = Number(drafts[key] || current)
-                          actions.setPricingOverride({
+                          void actions.setPricingOverride({
                             categoryId: cat.id,
                             problemId: p.id,
                             baseFeeSar: val,
@@ -145,7 +145,7 @@ export function AdminDiscounts() {
                 usedCount: 0,
                 active: true,
               }
-              actions.upsertDiscount(code)
+              void actions.upsertDiscount(code)
               setForm({ code: '', percentOff: '10', maxUses: '50' })
             }}
           >
@@ -168,7 +168,7 @@ export function AdminDiscounts() {
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
                 d.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
               }`}
-              onClick={() => actions.toggleDiscount(d.id)}
+              onClick={() => void actions.toggleDiscount(d.id)}
             >
               {d.active ? t('active') : t('inactive')}
             </button>

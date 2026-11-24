@@ -9,8 +9,16 @@ export function RequireAuth({
   roles: UserRole[]
   children: React.ReactNode
 }) {
-  const { currentUser } = useStore()
+  const { currentUser, loading } = useStore()
   const location = useLocation()
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-navy-700/60">
+        Loading…
+      </div>
+    )
+  }
 
   if (!currentUser) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />

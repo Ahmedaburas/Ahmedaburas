@@ -23,7 +23,9 @@ export function NotificationsPage() {
           <button
             type="button"
             className="btn-secondary"
-            onClick={() => currentUser && actions.markAllNotificationsRead(currentUser.id)}
+            onClick={() =>
+              currentUser && void actions.markAllNotificationsRead(currentUser.id)
+            }
           >
             {t('markRead')}
           </button>
@@ -38,7 +40,7 @@ export function NotificationsPage() {
             <Link
               key={n.id}
               to={bookingPath(n.bookingId)}
-              onClick={() => actions.markNotificationRead(n.id)}
+              onClick={() => void actions.markNotificationRead(n.id)}
               className={`card-surface block p-4 transition hover:border-teal-400/40 ${
                 n.read ? 'opacity-70' : 'border-teal-200 bg-teal-50/30'
               }`}

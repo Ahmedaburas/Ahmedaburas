@@ -2,6 +2,7 @@ import { Phone, Star } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { mapsService } from '../../adapters'
+import { ProcessTracker } from '../../components/ProcessTracker'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../store/store'
@@ -19,7 +20,6 @@ export function CustomerBookingDetail() {
     timeSlotLabel,
     formatSar,
     displayName,
-    statusLabel,
   } = useI18n()
 
   const booking = state.bookings.find((b) => b.id === id)
@@ -28,6 +28,7 @@ export function CustomerBookingDetail() {
   const [rating, setRating] = useState(5)
   const [review, setReview] = useState('')
   const [paying, setPaying] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   const mapUrl = useMemo(() => {
     if (!booking?.address.lat) return null
@@ -66,32 +67,7 @@ export function CustomerBookingDetail() {
         <StatusBadge status={booking.status} />
       </div>
 
-      {/* Timeline */}
-      <div className="card-surface p-5">
-        <h2 className="mb-4 font-semibold text-navy-900">{t('trackStatus')}</h2>
-        <ol className="space-y-3">
-          {booking.statusHistory.map((h, i) => (
-            <li key={`${h.status}-${h.at}`} className="flex gap-3">
-              <div className="flex flex-col items-center">
-                <span
-                  className={`mt-1 h-2.5 w-2.5 rounded-full ${
-                    i === booking.statusHistory.length - 1 ? 'bg-teal-500' : 'bg-navy-200'
-                  }`}
-                />
-                {i < booking.statusHistory.length - 1 && (
-                  <span className="w-px flex-1 bg-navy-100" />
-                )}
-              </div>
-              <div className="pb-3">
-                <p className="text-sm font-medium text-navy-900">{statusLabel(h.status)}</p>
-                <p className="text-xs text-navy-700/45">
-                  {new Date(h.at).toLocaleString(locale === 'ar' ? 'ar-SA' : 'en-SA')}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </div>
+      <ProcessTracker booking={booking} />
 
       {pendingExtra.length > 0 && (
         <div className="card-surface border-orange-200 bg-orange-50/40 p-5">
@@ -104,14 +80,24 @@ export function CustomerBookingDetail() {
                 <button
                   type="button"
                   className="btn-primary"
-                  onClick={() => actions.respondExtraWork(booking.id, e.id, true)}
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true)
+                    await actions.respondExtraWork(booking.id, e.id, true)
+                    setBusy(false)
+                  }}
                 >
                   {t('approve')}
                 </button>
                 <button
                   type="button"
                   className="btn-secondary"
-                  onClick={() => actions.respondExtraWork(booking.id, e.id, false)}
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true)
+                    await actions.respondExtraWork(booking.id, e.id, false)
+                    setBusy(false)
+                  }}
                 >
                   {t('reject')}
                 </button>
@@ -138,6 +124,15 @@ export function CustomerBookingDetail() {
               <p className="text-sm text-navy-700/55">
                 ★ {tech.rating?.toFixed(1)} · {tech.reviewCount} {t('reviews').toLowerCase()}
               </p>
+              {booking.status === 'on_the_way' && booking.process?.estimatedArrival && (
+                <p className="mt-1 text-xs font-medium text-teal-700">
+                  ETA{' '}
+                  {new Date(booking.process.estimatedArrival).toLocaleTimeString(
+                    locale === 'ar' ? 'ar-SA' : 'en-SA',
+                    { hour: '2-digit', minute: '2-digit' },
+                  )}
+                </p>
+              )}
             </div>
             <a href={`tel:${tech.phone}`} className="btn-secondary">
               <Phone className="h-4 w-4" />
@@ -189,9 +184,7 @@ export function CustomerBookingDetail() {
         </ul>
         <div className="mt-3 flex justify-between border-t border-navy-100 pt-3 font-bold">
           <span>{t('total')}</span>
-          <span>
-            {formatSar(booking.costs.reduce((s, c) => s + c.amountSar, 0))}
-          </span>
+          <span>{formatSar(booking.costs.reduce((s, c) => s + c.amountSar, 0))}</span>
         </div>
       </div>
 
@@ -243,7 +236,7 @@ export function CustomerBookingDetail() {
           <button
             type="button"
             className="btn-primary mt-3"
-            onClick={() => actions.rateBooking(booking.id, rating, review)}
+            onClick={() => void actions.rateBooking(booking.id, rating, review)}
           >
             {t('submitReview')}
           </button>
@@ -262,7 +255,7 @@ export function CustomerBookingDetail() {
         <button
           type="button"
           className="btn-secondary text-red-600"
-          onClick={() => actions.cancelBooking(booking.id)}
+          onClick={() => void actions.cancelBooking(booking.id)}
         >
           {t('cancel')}
         </button>

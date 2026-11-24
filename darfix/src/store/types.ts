@@ -29,7 +29,7 @@ export interface User {
   nameAr: string
   email: string
   phone: string
-  password: string
+  password?: string
   cityId?: string
   districtId?: string
   specialties?: ServiceCategoryId[]
@@ -92,6 +92,29 @@ export interface Invoice {
   paidAt?: string
 }
 
+export interface ProcessNote {
+  id: string
+  at: string
+  text: string
+  authorId: string
+}
+
+export interface ChecklistItem {
+  id: string
+  label: string
+  done: boolean
+}
+
+export interface BookingProcess {
+  estimatedArrival?: string
+  arrivedAt?: string
+  startedAt?: string
+  completedAt?: string
+  currentStepNote?: string
+  technicianNotes: ProcessNote[]
+  workChecklist: ChecklistItem[]
+}
+
 export interface Booking {
   id: string
   customerId: string
@@ -113,6 +136,7 @@ export interface Booking {
   reviewedAt?: string
   discountCode?: string
   discountAmountSar?: number
+  process?: BookingProcess
   createdAt: string
   updatedAt: string
   statusHistory: { status: BookingStatus; at: string; by?: string; note?: string }[]

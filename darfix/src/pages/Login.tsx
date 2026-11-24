@@ -25,9 +25,9 @@ export function Login() {
     else navigate('/app')
   }
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const user = actions.login(email.trim(), password)
+    const user = await actions.login(email.trim(), password)
     if (!user) {
       setError(t('loginFailed'))
       return
@@ -35,8 +35,8 @@ export function Login() {
     goHome(user.role)
   }
 
-  const quickLogin = (demoEmail: string) => {
-    const user = actions.login(demoEmail, DEMO_PASSWORD)
+  const quickLogin = async (demoEmail: string) => {
+    const user = await actions.login(demoEmail, DEMO_PASSWORD)
     if (user) goHome(user.role)
   }
 
@@ -105,7 +105,7 @@ export function Login() {
               <button
                 key={d.email}
                 type="button"
-                onClick={() => quickLogin(d.email)}
+                onClick={() => void quickLogin(d.email)}
                 className="flex w-full items-center justify-between rounded-xl border border-navy-100 bg-sand-50/50 px-4 py-3 text-start transition hover:border-teal-400 hover:bg-teal-50/40"
               >
                 <div>

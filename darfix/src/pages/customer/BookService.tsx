@@ -82,7 +82,7 @@ export function BookService() {
   const submit = async () => {
     if (!categoryId || !problemId) return
     const geo = await mapsService.geocode(`${street} ${cityId}`)
-    const booking = actions.createBooking({
+    const booking = await actions.createBooking({
       categoryId,
       problemId,
       description,

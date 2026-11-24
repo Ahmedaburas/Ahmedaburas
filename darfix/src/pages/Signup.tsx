@@ -25,9 +25,9 @@ export function Signup() {
     [form.cityId],
   )
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const result = actions.signup({
+    const result = await actions.signup({
       name: form.name,
       email: form.email,
       phone: form.phone,
