@@ -1,4 +1,9 @@
-export type UserRole = 'customer' | 'technician' | 'admin'
+export type UserRole = 'customer' | 'technician' | 'admin' | 'provider'
+
+export type ProviderKind = 'company' | 'independent'
+export type EmploymentType = 'independent' | 'company'
+export type AssignmentMode = 'named_tech' | 'company_pool'
+export type OrgMemberRole = 'owner' | 'dispatcher' | 'technician'
 
 export type BookingStatus =
   | 'new_request'

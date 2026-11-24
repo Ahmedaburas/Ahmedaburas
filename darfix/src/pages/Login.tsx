@@ -7,7 +7,8 @@ import { DEMO_PASSWORD, useStore } from '../store/store'
 
 const demos = [
   { role: 'customer', email: 'customer@darfix.sa', labelKey: 'customer' },
-  { role: 'technician', email: 'tech@darfix.sa', labelKey: 'technician' },
+  { role: 'technician', email: 'tech@darfix.sa', labelKey: 'independentTech' },
+  { role: 'provider', email: 'company@darfix.sa', labelKey: 'maintenanceCompany' },
   { role: 'admin', email: 'admin@darfix.sa', labelKey: 'admin' },
 ] as const
 
@@ -22,6 +23,7 @@ export function Login() {
   const goHome = (role: string) => {
     if (role === 'admin') navigate('/admin')
     else if (role === 'technician') navigate('/tech')
+    else if (role === 'provider') navigate('/provider')
     else navigate('/app')
   }
 
@@ -91,6 +93,10 @@ export function Login() {
             {t('noAccount')}{' '}
             <Link to="/signup" className="font-semibold text-teal-600 hover:underline">
               {t('signUp')}
+            </Link>
+            {' · '}
+            <Link to="/signup/provider" className="font-semibold text-teal-600 hover:underline">
+              {t('joinAsProvider')}
             </Link>
           </p>
         </div>

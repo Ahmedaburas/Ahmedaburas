@@ -2,7 +2,7 @@ import { Camera, Check, ChevronLeft, ChevronRight, Droplets, Zap } from 'lucide-
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { mapsService } from '../../adapters'
-import { SAUDI_CITIES } from '../../config/cities'
+import { LAUNCH_CITY_ID, serviceAreaCities } from '../../config/cities'
 import { SERVICE_CATEGORIES, type ServiceCategoryId } from '../../config/services'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../store/store'
@@ -26,8 +26,12 @@ export function BookService() {
   const [problemId, setProblemId] = useState<string | null>(null)
   const [description, setDescription] = useState('')
   const [photos, setPhotos] = useState<JobPhoto[]>([])
-  const [cityId, setCityId] = useState(currentUser?.cityId ?? 'riyadh')
-  const [districtId, setDistrictId] = useState(currentUser?.districtId ?? 'olaya')
+  const cities = serviceAreaCities()
+  const launch = cities.find((c) => c.id === LAUNCH_CITY_ID) ?? cities[0]
+  const [cityId, setCityId] = useState(currentUser?.cityId ?? launch.id)
+  const [districtId, setDistrictId] = useState(
+    currentUser?.districtId ?? launch.districts[0]?.id ?? '',
+  )
   const [street, setStreet] = useState('')
   const [building, setBuilding] = useState('')
   const [preferredDate, setPreferredDate] = useState('')
@@ -37,8 +41,8 @@ export function BookService() {
 
   const category = SERVICE_CATEGORIES.find((c) => c.id === categoryId)
   const districts = useMemo(
-    () => SAUDI_CITIES.find((c) => c.id === cityId)?.districts ?? [],
-    [cityId],
+    () => cities.find((c) => c.id === cityId)?.districts ?? [],
+    [cities, cityId],
   )
 
   const baseFee = categoryId && problemId ? actions.getEffectiveFee(categoryId, problemId) : 0
@@ -226,12 +230,12 @@ export function BookService() {
                   className="input-field"
                   value={cityId}
                   onChange={(e) => {
-                    const city = SAUDI_CITIES.find((c) => c.id === e.target.value)!
+                    const city = cities.find((c) => c.id === e.target.value)!
                     setCityId(city.id)
                     setDistrictId(city.districts[0]?.id ?? '')
                   }}
                 >
-                  {SAUDI_CITIES.map((c) => (
+                  {cities.map((c) => (
                     <option key={c.id} value={c.id}>
                       {locale === 'ar' ? c.nameAr : c.nameEn}
                     </option>

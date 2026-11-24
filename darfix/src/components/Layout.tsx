@@ -70,7 +70,9 @@ export function AppShell({
                   ? '/admin/notifications'
                   : currentUser?.role === 'technician'
                     ? '/tech/notifications'
-                    : '/app/notifications'
+                    : currentUser?.role === 'provider'
+                      ? '/provider/notifications'
+                      : '/app/notifications'
               }
               className="btn-ghost relative"
               aria-label={t('notifications')}

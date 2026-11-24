@@ -1,5 +1,6 @@
 /**
  * Maps adapter — mock geocoding/pin; replace with Google Maps / Mapbox later.
+ * Launch market centroid: Jubail, Eastern Province, KSA.
  */
 export interface GeoPoint {
   lat: number
@@ -13,19 +14,26 @@ export interface MapsService {
   staticMapUrl(point: GeoPoint, zoom?: number): string
 }
 
-/** Rough centroids for demo cities */
+/** Rough centroids for demo cities — Jubail is the launch default */
 const CITY_CENTROIDS: Record<string, GeoPoint> = {
-  riyadh: { lat: 24.7136, lng: 46.6753, label: 'Riyadh' },
-  jeddah: { lat: 21.4858, lng: 39.1925, label: 'Jeddah' },
+  jubail: { lat: 27.0174, lng: 49.6583, label: 'Jubail' },
   dammam: { lat: 26.4207, lng: 50.0888, label: 'Dammam' },
   khobar: { lat: 26.2172, lng: 50.1971, label: 'Al Khobar' },
+  riyadh: { lat: 24.7136, lng: 46.6753, label: 'Riyadh' },
+  jeddah: { lat: 21.4858, lng: 39.1925, label: 'Jeddah' },
 }
+
+const DEFAULT_CENTROID = CITY_CENTROIDS.jubail
 
 export class MockMapsService implements MapsService {
   async geocode(address: string): Promise<GeoPoint> {
     const lower = address.toLowerCase()
     for (const [id, point] of Object.entries(CITY_CENTROIDS)) {
-      if (lower.includes(id) || lower.includes(point.label!.toLowerCase())) {
+      if (
+        lower.includes(id) ||
+        lower.includes(point.label!.toLowerCase()) ||
+        (id === 'jubail' && (lower.includes('الجبيل') || lower.includes('jubail')))
+      ) {
         return {
           lat: point.lat + (Math.random() - 0.5) * 0.02,
           lng: point.lng + (Math.random() - 0.5) * 0.02,
@@ -33,7 +41,11 @@ export class MockMapsService implements MapsService {
         }
       }
     }
-    return { lat: 24.7136, lng: 46.6753, label: address }
+    return {
+      lat: DEFAULT_CENTROID.lat + (Math.random() - 0.5) * 0.02,
+      lng: DEFAULT_CENTROID.lng + (Math.random() - 0.5) * 0.02,
+      label: address,
+    }
   }
 
   async reverseGeocode(lat: number, lng: number): Promise<string> {
@@ -53,7 +65,7 @@ export class MockMapsService implements MapsService {
   }
 
   cityCentroid(cityId: string): GeoPoint {
-    return CITY_CENTROIDS[cityId] ?? CITY_CENTROIDS.riyadh
+    return CITY_CENTROIDS[cityId] ?? DEFAULT_CENTROID
   }
 }
 

@@ -5,12 +5,14 @@ import { StoreProvider, useStore } from './store/store'
 import { Landing } from './pages/Landing'
 import { Login } from './pages/Login'
 import { Signup } from './pages/Signup'
+import { ProviderSignup } from './pages/ProviderSignup'
 import { NotificationsPage } from './pages/Notifications'
 import { CustomerHome } from './pages/customer/CustomerHome'
 import { BookService } from './pages/customer/BookService'
 import { CustomerBookingDetail } from './pages/customer/BookingDetail'
 import { TechHome } from './pages/technician/TechHome'
 import { TechJobDetail } from './pages/technician/JobDetail'
+import { ProviderHome } from './pages/provider/ProviderHome'
 import { AdminOverview } from './pages/admin/AdminOverview'
 import { AdminBookings, AdminBookingDetail } from './pages/admin/AdminBookings'
 import { AdminCustomers, AdminTechnicians } from './pages/admin/AdminPeople'
@@ -20,13 +22,19 @@ import {
   AdminDiscounts,
   AdminReports,
 } from './pages/admin/AdminOps'
-import { CustomerLayout, TechLayout, AdminLayout } from './pages/layouts'
+import { CustomerLayout, TechLayout, AdminLayout, ProviderLayout } from './pages/layouts'
 
 function NotificationsRedirect() {
   const { currentUser } = useStore()
   if (!currentUser) return <Navigate to="/login" replace />
   const base =
-    currentUser.role === 'admin' ? '/admin' : currentUser.role === 'technician' ? '/tech' : '/app'
+    currentUser.role === 'admin'
+      ? '/admin'
+      : currentUser.role === 'technician'
+        ? '/tech'
+        : currentUser.role === 'provider'
+          ? '/provider'
+          : '/app'
   return <Navigate to={`${base}/notifications`} replace />
 }
 
@@ -39,6 +47,7 @@ export default function App() {
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            <Route path="/signup/provider" element={<ProviderSignup />} />
 
             <Route
               path="/app"
@@ -64,6 +73,19 @@ export default function App() {
             >
               <Route index element={<TechHome />} />
               <Route path="jobs/:id" element={<TechJobDetail />} />
+              <Route path="notifications" element={<NotificationsPage />} />
+            </Route>
+
+            <Route
+              path="/provider"
+              element={
+                <RequireAuth roles={['provider']}>
+                  <ProviderLayout />
+                </RequireAuth>
+              }
+            >
+              <Route index element={<ProviderHome />} />
+              <Route path="bookings/:id" element={<ProviderHome />} />
               <Route path="notifications" element={<NotificationsPage />} />
             </Route>
 

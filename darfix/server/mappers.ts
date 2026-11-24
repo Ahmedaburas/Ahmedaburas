@@ -19,6 +19,35 @@ export function mapUser(row: Row, includePassword = false) {
     reviewCount: (row.review_count as number) ?? undefined,
     active: row.active === undefined || row.active === null ? true : Boolean(row.active),
     avatarColor: (row.avatar_color as string) || undefined,
+    employmentType: (row.employment_type as string) || undefined,
+    organizationId: (row.organization_id as string) || undefined,
+  }
+}
+
+export function mapOrganization(row: Row) {
+  return {
+    id: row.id as string,
+    kind: row.kind as string,
+    name: row.name as string,
+    nameAr: row.name_ar as string,
+    cityId: row.city_id as string,
+    phone: (row.phone as string) || undefined,
+    email: (row.email as string) || undefined,
+    commercialRegistration: (row.commercial_registration as string) || undefined,
+    licenseNumber: (row.license_number as string) || undefined,
+    status: row.status as string,
+    createdAt: row.created_at as string,
+  }
+}
+
+export function mapOrgMember(row: Row) {
+  return {
+    id: row.id as string,
+    organizationId: row.organization_id as string,
+    userId: row.user_id as string,
+    memberRole: row.member_role as string,
+    active: Boolean(row.active),
+    createdAt: row.created_at as string,
   }
 }
 
@@ -33,6 +62,8 @@ export function mapBooking(row: Row) {
     id: row.id as string,
     customerId: row.customer_id as string,
     technicianId: (row.technician_id as string) || undefined,
+    organizationId: (row.organization_id as string) || undefined,
+    assignmentMode: (row.assignment_mode as string) || undefined,
     categoryId: row.category_id as string,
     problemId: row.problem_id as string,
     description: row.description as string,

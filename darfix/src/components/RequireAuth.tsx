@@ -29,7 +29,9 @@ export function RequireAuth({
         ? '/admin'
         : currentUser.role === 'technician'
           ? '/tech'
-          : '/app'
+          : currentUser.role === 'provider'
+            ? '/provider'
+            : '/app'
     return <Navigate to={home} replace />
   }
   return <>{children}</>

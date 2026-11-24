@@ -12,6 +12,7 @@ export function NotificationsPage() {
     if (!bookingId || !currentUser) return '#'
     if (currentUser.role === 'admin') return `/admin/bookings/${bookingId}`
     if (currentUser.role === 'technician') return `/tech/jobs/${bookingId}`
+    if (currentUser.role === 'provider') return `/provider/bookings/${bookingId}`
     return `/app/bookings/${bookingId}`
   }
 

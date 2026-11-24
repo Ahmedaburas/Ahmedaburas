@@ -33,6 +33,8 @@ const emptyState = (locale: 'en' | 'ar' = 'en'): AppState => ({
   invoices: [],
   discountCodes: [],
   pricingOverrides: [],
+  organizations: [],
+  organizationMembers: [],
   sessionUserId: null,
   locale,
 })
@@ -49,6 +51,21 @@ interface StoreActions {
     cityId?: string
     districtId?: string
   }) => Promise<User | { error: string }>
+  signupProvider: (data: {
+    kind: 'independent' | 'company'
+    name: string
+    nameAr?: string
+    email: string
+    phone: string
+    password: string
+    cityId?: string
+    districtId?: string
+    specialties?: ServiceCategoryId[]
+    companyName?: string
+    companyNameAr?: string
+    commercialRegistration?: string
+    licenseNumber?: string
+  }) => Promise<User | { error: string }>
   setLocale: (locale: 'en' | 'ar') => void
   resetDemoData: () => Promise<void>
   refresh: () => Promise<void>
@@ -64,7 +81,11 @@ interface StoreActions {
     discountCode?: string
   }) => Promise<Booking>
   updateBookingStatus: (bookingId: string, status: BookingStatus, note?: string) => Promise<void>
-  assignTechnician: (bookingId: string, technicianId: string) => Promise<void>
+  assignTechnician: (
+    bookingId: string,
+    technicianId?: string,
+    organizationId?: string,
+  ) => Promise<void>
   addBookingPhotos: (bookingId: string, photos: JobPhoto[]) => Promise<void>
   addCosts: (bookingId: string, costs: CostLine[]) => Promise<void>
   submitJobReport: (bookingId: string, report: string) => Promise<void>
@@ -226,6 +247,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    const signupProvider = async (data: {
+      kind: 'independent' | 'company'
+      name: string
+      nameAr?: string
+      email: string
+      phone: string
+      password: string
+      cityId?: string
+      districtId?: string
+      specialties?: ServiceCategoryId[]
+      companyName?: string
+      companyNameAr?: string
+      commercialRegistration?: string
+      licenseNumber?: string
+    }) => {
+      try {
+        const { token, user } = await api.signupProvider(data)
+        setToken(token)
+        await refresh()
+        return user
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : 'Signup failed' }
+      }
+    }
+
     const setLocale = (locale: 'en' | 'ar') => {
       setStoredLocale(locale)
       setState((s) => ({ ...s, locale }))
@@ -264,8 +310,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       await refresh()
     }
 
-    const assignTechnician = async (bookingId: string, technicianId: string) => {
-      const { booking } = await api.assignTechnician(bookingId, technicianId)
+    const assignTechnician = async (
+      bookingId: string,
+      technicianId?: string,
+      organizationId?: string,
+    ) => {
+      const { booking } = await api.assignTechnician(bookingId, technicianId, organizationId)
       setState((s) => ({ ...s, bookings: upsertBooking(s.bookings, booking) }))
       await refresh()
     }
@@ -374,6 +424,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       signup,
+      signupProvider,
       setLocale,
       resetDemoData,
       refresh,

@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs'
-import { db, uid } from './db'
+import { db, SEED_VERSION, uid } from './db'
 import { defaultChecklist, emptyProcess, type BookingProcess } from './types'
 
 const DEMO_PASSWORD = 'demo123'
@@ -15,32 +15,95 @@ export function seedIfEmpty(force = false) {
   const seeded = db.prepare(`SELECT value FROM meta WHERE key = 'seeded'`).get() as
     | { value: string }
     | undefined
-  if (seeded && !force) return false
+  const version = db.prepare(`SELECT value FROM meta WHERE key = 'seed_version'`).get() as
+    | { value: string }
+    | undefined
+  if (seeded && version?.value === SEED_VERSION && !force) return false
 
-  if (force) {
-    db.exec(`
-      DELETE FROM sessions;
-      DELETE FROM notifications;
-      DELETE FROM quotations;
-      DELETE FROM invoices;
-      DELETE FROM discount_codes;
-      DELETE FROM pricing_overrides;
-      DELETE FROM bookings;
-      DELETE FROM users;
-      DELETE FROM meta;
-    `)
-  }
+  db.exec(`
+    DELETE FROM sessions;
+    DELETE FROM notifications;
+    DELETE FROM quotations;
+    DELETE FROM invoices;
+    DELETE FROM discount_codes;
+    DELETE FROM pricing_overrides;
+    DELETE FROM agent_approvals;
+    DELETE FROM organization_members;
+    DELETE FROM bookings;
+    DELETE FROM users;
+    DELETE FROM provider_organizations;
+    DELETE FROM meta;
+  `)
 
   const hash = bcrypt.hashSync(DEMO_PASSWORD, 8)
   const insertUser = db.prepare(`
     INSERT INTO users (
       id, role, name, name_ar, email, phone, password_hash,
-      city_id, district_id, specialties, rating, review_count, active, avatar_color, created_at
+      city_id, district_id, specialties, rating, review_count, active, avatar_color,
+      employment_type, organization_id, created_at
     ) VALUES (
       @id, @role, @name, @name_ar, @email, @phone, @password_hash,
-      @city_id, @district_id, @specialties, @rating, @review_count, @active, @avatar_color, @created_at
+      @city_id, @district_id, @specialties, @rating, @review_count, @active, @avatar_color,
+      @employment_type, @organization_id, @created_at
     )
   `)
+
+  const insertOrg = db.prepare(`
+    INSERT INTO provider_organizations (
+      id, kind, name, name_ar, city_id, phone, email,
+      commercial_registration, license_number, status, created_at
+    ) VALUES (
+      @id, @kind, @name, @name_ar, @city_id, @phone, @email,
+      @commercial_registration, @license_number, @status, @created_at
+    )
+  `)
+
+  const insertMember = db.prepare(`
+    INSERT INTO organization_members (
+      id, organization_id, user_id, member_role, active, created_at
+    ) VALUES (?, ?, ?, ?, 1, ?)
+  `)
+
+  const now = new Date().toISOString()
+
+  const orgs = [
+    {
+      id: 'org-company-1',
+      kind: 'company',
+      name: 'Jubail Home Care Co.',
+      name_ar: 'شركة الجبيل للعناية المنزلية',
+      city_id: 'jubail',
+      phone: '+966133600100',
+      email: 'ops@jubailhomecare.sa',
+      commercial_registration: '2055001234',
+      license_number: 'JBL-MNT-2024-88',
+      status: 'active',
+    },
+    {
+      id: 'org-indie-1',
+      kind: 'independent',
+      name: 'Mohammed Al Otaibi (Independent)',
+      name_ar: 'محمد العتيبي (مستقل)',
+      city_id: 'jubail',
+      phone: '+966501112233',
+      email: 'tech@darfix.sa',
+      commercial_registration: null,
+      license_number: 'FREELANCE-JBL-01',
+      status: 'active',
+    },
+    {
+      id: 'org-indie-2',
+      kind: 'independent',
+      name: 'Nasser Al Dosari (Independent)',
+      name_ar: 'ناصر الدوسري (مستقل)',
+      city_id: 'jubail',
+      phone: '+966507778899',
+      email: 'nasser@darfix.sa',
+      commercial_registration: null,
+      license_number: 'FREELANCE-JBL-02',
+      status: 'active',
+    },
+  ]
 
   const users = [
     {
@@ -50,13 +113,15 @@ export function seedIfEmpty(force = false) {
       name_ar: 'سارة الحربي',
       email: 'customer@darfix.sa',
       phone: '+966512345678',
-      city_id: 'riyadh',
-      district_id: 'olaya',
+      city_id: 'jubail',
+      district_id: 'fanateer',
       specialties: null,
       rating: null,
       review_count: 0,
       active: 1,
       avatar_color: '#14B8A6',
+      employment_type: null,
+      organization_id: null,
     },
     {
       id: 'cust-2',
@@ -65,13 +130,32 @@ export function seedIfEmpty(force = false) {
       name_ar: 'فهد القحطاني',
       email: 'fahad@example.sa',
       phone: '+966598765432',
-      city_id: 'jeddah',
-      district_id: 'hamra',
+      city_id: 'jubail',
+      district_id: 'huwaylat',
       specialties: null,
       rating: null,
       review_count: 0,
       active: 1,
       avatar_color: '#0D9488',
+      employment_type: null,
+      organization_id: null,
+    },
+    {
+      id: 'provider-1',
+      role: 'provider',
+      name: 'Hassan Al Mutairi',
+      name_ar: 'حسن المطيري',
+      email: 'company@darfix.sa',
+      phone: '+966501001001',
+      city_id: 'jubail',
+      district_id: 'industrial',
+      specialties: null,
+      rating: null,
+      review_count: 0,
+      active: 1,
+      avatar_color: '#0F766E',
+      employment_type: 'company',
+      organization_id: 'org-company-1',
     },
     {
       id: 'tech-1',
@@ -80,13 +164,15 @@ export function seedIfEmpty(force = false) {
       name_ar: 'محمد العتيبي',
       email: 'tech@darfix.sa',
       phone: '+966501112233',
-      city_id: 'riyadh',
-      district_id: null,
+      city_id: 'jubail',
+      district_id: 'fanateer',
       specialties: JSON.stringify(['plumbing', 'electrical']),
       rating: 4.8,
       review_count: 126,
       active: 1,
       avatar_color: '#0B3A4A',
+      employment_type: 'independent',
+      organization_id: 'org-indie-1',
     },
     {
       id: 'tech-2',
@@ -95,13 +181,15 @@ export function seedIfEmpty(force = false) {
       name_ar: 'خالد الغامدي',
       email: 'khalid@darfix.sa',
       phone: '+966504445566',
-      city_id: 'jeddah',
-      district_id: null,
+      city_id: 'jubail',
+      district_id: 'balad',
       specialties: JSON.stringify(['plumbing']),
       rating: 4.6,
       review_count: 89,
       active: 1,
       avatar_color: '#156074',
+      employment_type: 'company',
+      organization_id: 'org-company-1',
     },
     {
       id: 'tech-3',
@@ -110,13 +198,32 @@ export function seedIfEmpty(force = false) {
       name_ar: 'ناصر الدوسري',
       email: 'nasser@darfix.sa',
       phone: '+966507778899',
-      city_id: 'dammam',
-      district_id: null,
+      city_id: 'jubail',
+      district_id: 'dafi',
       specialties: JSON.stringify(['electrical']),
       rating: 4.9,
       review_count: 64,
       active: 1,
       avatar_color: '#0F4A5C',
+      employment_type: 'independent',
+      organization_id: 'org-indie-2',
+    },
+    {
+      id: 'tech-4',
+      role: 'technician',
+      name: 'Yousef Al Shammari',
+      name_ar: 'يوسف الشمري',
+      email: 'yousef@jubailhomecare.sa',
+      phone: '+966509998877',
+      city_id: 'jubail',
+      district_id: 'industrial',
+      specialties: JSON.stringify(['plumbing', 'electrical']),
+      rating: 4.7,
+      review_count: 41,
+      active: 1,
+      avatar_color: '#115E59',
+      employment_type: 'company',
+      organization_id: 'org-company-1',
     },
     {
       id: 'admin-1',
@@ -125,32 +232,42 @@ export function seedIfEmpty(force = false) {
       name_ar: 'مسؤول دارفكس',
       email: 'admin@darfix.sa',
       phone: '+966500000001',
-      city_id: null,
+      city_id: 'jubail',
       district_id: null,
       specialties: null,
       rating: null,
       review_count: 0,
       active: 1,
       avatar_color: '#061820',
+      employment_type: null,
+      organization_id: null,
     },
   ]
 
-  const now = new Date().toISOString()
   const tx = db.transaction(() => {
+    for (const o of orgs) {
+      insertOrg.run({ ...o, created_at: now })
+    }
     for (const u of users) {
       insertUser.run({ ...u, password_hash: hash, created_at: now })
     }
 
+    insertMember.run('mem-1', 'org-company-1', 'provider-1', 'owner', now)
+    insertMember.run('mem-2', 'org-company-1', 'tech-2', 'technician', now)
+    insertMember.run('mem-3', 'org-company-1', 'tech-4', 'technician', now)
+    insertMember.run('mem-4', 'org-indie-1', 'tech-1', 'owner', now)
+    insertMember.run('mem-5', 'org-indie-2', 'tech-3', 'owner', now)
+
     const processOnWay: BookingProcess = {
       ...emptyProcess(),
       estimatedArrival: new Date(Date.now() + 25 * 60000).toISOString(),
-      currentStepNote: 'Technician departed — ETA ~25 minutes',
+      currentStepNote: 'Technician departed Fanateer — ETA ~25 minutes',
       workChecklist: defaultChecklist('plumbing'),
       technicianNotes: [
         {
           id: 'pn-1',
           at: hoursAgo(2),
-          text: 'Accepted job. Heading from Olaya depot with spare fittings.',
+          text: 'Accepted job. Heading from Fanateer with spare fittings.',
           authorId: 'tech-1',
         },
       ],
@@ -194,12 +311,14 @@ export function seedIfEmpty(force = false) {
 
     const insertBooking = db.prepare(`
       INSERT INTO bookings (
-        id, customer_id, technician_id, category_id, problem_id, description, photos,
+        id, customer_id, technician_id, organization_id, assignment_mode,
+        category_id, problem_id, description, photos,
         address, preferred_date, preferred_time_slot, estimated_fee_sar, status, costs,
         extra_work, job_report, rating, review_text, reviewed_at, discount_code,
         discount_amount_sar, process, status_history, created_at, updated_at
       ) VALUES (
-        @id, @customer_id, @technician_id, @category_id, @problem_id, @description, @photos,
+        @id, @customer_id, @technician_id, @organization_id, @assignment_mode,
+        @category_id, @problem_id, @description, @photos,
         @address, @preferred_date, @preferred_time_slot, @estimated_fee_sar, @status, @costs,
         @extra_work, @job_report, @rating, @review_text, @reviewed_at, @discount_code,
         @discount_amount_sar, @process, @status_history, @created_at, @updated_at
@@ -210,16 +329,18 @@ export function seedIfEmpty(force = false) {
       id: 'bk-1001',
       customer_id: 'cust-1',
       technician_id: 'tech-1',
+      organization_id: 'org-indie-1',
+      assignment_mode: 'named_tech',
       category_id: 'plumbing',
       problem_id: 'water-leaks',
       description: 'Kitchen sink pipe is leaking under the cabinet. Water pooling overnight.',
       photos: '[]',
       address: JSON.stringify({
-        cityId: 'riyadh',
-        districtId: 'olaya',
-        street: 'King Fahd Road, Building 12, Apt 5',
-        lat: 24.691,
-        lng: 46.685,
+        cityId: 'jubail',
+        districtId: 'fanateer',
+        street: 'King Fahd Coastal Rd, Building 12, Apt 5',
+        lat: 27.021,
+        lng: 49.655,
       }),
       preferred_date: daysAgo(-1).slice(0, 10),
       preferred_time_slot: '10-12',
@@ -238,7 +359,7 @@ export function seedIfEmpty(force = false) {
         { status: 'new_request', at: daysAgo(1) },
         { status: 'confirmed', at: hoursAgo(20), by: 'admin-1' },
         { status: 'technician_assigned', at: hoursAgo(18), by: 'admin-1' },
-        { status: 'on_the_way', at: hoursAgo(2), by: 'tech-1', note: 'Departed depot' },
+        { status: 'on_the_way', at: hoursAgo(2), by: 'tech-1', note: 'Departed Fanateer' },
       ]),
       created_at: daysAgo(1),
       updated_at: hoursAgo(2),
@@ -248,16 +369,18 @@ export function seedIfEmpty(force = false) {
       id: 'bk-1002',
       customer_id: 'cust-1',
       technician_id: 'tech-1',
+      organization_id: 'org-indie-1',
+      assignment_mode: 'named_tech',
       category_id: 'electrical',
       problem_id: 'switch-socket',
       description: 'Living room sockets not working. Breaker trips when used.',
       photos: '[]',
       address: JSON.stringify({
-        cityId: 'riyadh',
-        districtId: 'olaya',
-        street: 'King Fahd Road, Building 12, Apt 5',
-        lat: 24.691,
-        lng: 46.685,
+        cityId: 'jubail',
+        districtId: 'fanateer',
+        street: 'King Fahd Coastal Rd, Building 12, Apt 5',
+        lat: 27.021,
+        lng: 49.655,
       }),
       preferred_date: daysAgo(12).slice(0, 10),
       preferred_time_slot: '14-16',
@@ -291,21 +414,23 @@ export function seedIfEmpty(force = false) {
       id: 'bk-1003',
       customer_id: 'cust-2',
       technician_id: null,
+      organization_id: 'org-company-1',
+      assignment_mode: 'company_pool',
       category_id: 'plumbing',
       problem_id: 'blocked-drains',
       description: 'Bathroom drain completely blocked. Slow for days then stopped.',
       photos: '[]',
       address: JSON.stringify({
-        cityId: 'jeddah',
-        districtId: 'hamra',
-        street: 'Prince Sultan St, Villa 8',
-        lat: 21.543,
-        lng: 39.172,
+        cityId: 'jubail',
+        districtId: 'huwaylat',
+        street: 'Prince Nayef St, Villa 8',
+        lat: 27.005,
+        lng: 49.662,
       }),
       preferred_date: daysAgo(-2).slice(0, 10),
       preferred_time_slot: '16-18',
       estimated_fee_sar: 150,
-      status: 'new_request',
+      status: 'confirmed',
       costs: JSON.stringify([{ id: 'c5', label: 'Service call', amountSar: 150, type: 'fee' }]),
       extra_work: '[]',
       job_report: null,
@@ -317,27 +442,32 @@ export function seedIfEmpty(force = false) {
       process: JSON.stringify({
         ...emptyProcess(),
         workChecklist: defaultChecklist('plumbing'),
-        currentStepNote: 'Awaiting admin confirmation',
+        currentStepNote: 'Assigned to Jubail Home Care pool — awaiting named technician',
       }),
-      status_history: JSON.stringify([{ status: 'new_request', at: hoursAgo(5) }]),
+      status_history: JSON.stringify([
+        { status: 'new_request', at: hoursAgo(5) },
+        { status: 'confirmed', at: hoursAgo(4), by: 'admin-1' },
+      ]),
       created_at: hoursAgo(5),
-      updated_at: hoursAgo(5),
+      updated_at: hoursAgo(4),
     })
 
     insertBooking.run({
       id: 'bk-1004',
       customer_id: 'cust-2',
       technician_id: 'tech-2',
+      organization_id: 'org-company-1',
+      assignment_mode: 'named_tech',
       category_id: 'plumbing',
       problem_id: 'water-heater',
       description: 'Water heater not heating. Unit is 4 years old.',
       photos: '[]',
       address: JSON.stringify({
-        cityId: 'jeddah',
-        districtId: 'hamra',
-        street: 'Prince Sultan St, Villa 8',
-        lat: 21.543,
-        lng: 39.172,
+        cityId: 'jubail',
+        districtId: 'huwaylat',
+        street: 'Prince Nayef St, Villa 8',
+        lat: 27.005,
+        lng: 49.662,
       }),
       preferred_date: daysAgo(3).slice(0, 10),
       preferred_time_slot: '10-12',
@@ -383,8 +513,8 @@ export function seedIfEmpty(force = false) {
       'on_the_way',
       'Technician on the way',
       'الفني في الطريق',
-      'Mohammed is heading to your location for booking #bk-1001.',
-      'محمد في الطريق إلى موقعك للحجز #bk-1001.',
+      'Mohammed is heading to your Jubail location for booking #bk-1001.',
+      'محمد في الطريق إلى موقعك في الجبيل للحجز #bk-1001.',
       'bk-1001',
       0,
       hoursAgo(2),
@@ -418,6 +548,21 @@ export function seedIfEmpty(force = false) {
       'bk-1004',
       0,
       hoursAgo(8),
+    )
+    db.prepare(
+      `INSERT INTO notifications (id, user_id, type, title_en, title_ar, body_en, body_ar, booking_id, read, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'n4',
+      'provider-1',
+      'general',
+      'Pool job awaiting technician',
+      'مهمة في انتظار فني',
+      'Booking #bk-1003 is in your company pool — assign a technician.',
+      'الحجز #bk-1003 في مجموعة شركتك — عيّن فنياً.',
+      'bk-1003',
+      0,
+      hoursAgo(4),
     )
 
     db.prepare(
@@ -454,12 +599,14 @@ export function seedIfEmpty(force = false) {
 
     db.prepare(
       `INSERT INTO discount_codes (id, code, percent_off, active, max_uses, used_count) VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run('dc-1', 'WELCOME20', 20, 1, 100, 12)
+    ).run('dc-1', 'JUBAIL20', 20, 1, 100, 12)
     db.prepare(
       `INSERT INTO discount_codes (id, code, percent_off, active, max_uses, used_count) VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run('dc-2', 'RAMADAN15', 15, 1, 50, 8)
+    ).run('dc-2', 'WELCOME15', 15, 1, 50, 8)
 
     db.prepare(`INSERT INTO meta (key, value) VALUES ('seeded', ?)`).run(now)
+    db.prepare(`INSERT INTO meta (key, value) VALUES ('seed_version', ?)`).run(SEED_VERSION)
+    db.prepare(`INSERT INTO meta (key, value) VALUES ('launch_city', ?)`).run('jubail')
   })
 
   tx()

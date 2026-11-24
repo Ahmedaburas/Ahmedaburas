@@ -1,6 +1,34 @@
 import type { ServiceCategoryId } from '../config/services'
 
-export type UserRole = 'customer' | 'technician' | 'admin'
+export type UserRole = 'customer' | 'technician' | 'admin' | 'provider'
+
+export type ProviderKind = 'company' | 'independent'
+export type EmploymentType = 'independent' | 'company'
+export type AssignmentMode = 'named_tech' | 'company_pool'
+export type OrgMemberRole = 'owner' | 'dispatcher' | 'technician'
+
+export interface ProviderOrganization {
+  id: string
+  kind: ProviderKind
+  name: string
+  nameAr: string
+  cityId: string
+  phone?: string
+  email?: string
+  commercialRegistration?: string
+  licenseNumber?: string
+  status: 'active' | 'pending_review' | 'suspended'
+  createdAt: string
+}
+
+export interface OrganizationMember {
+  id: string
+  organizationId: string
+  userId: string
+  memberRole: OrgMemberRole
+  active: boolean
+  createdAt: string
+}
 
 export type BookingStatus =
   | 'new_request'
@@ -37,6 +65,9 @@ export interface User {
   reviewCount?: number
   active?: boolean
   avatarColor?: string
+  /** Set for technicians (and provider owners who also field). */
+  employmentType?: EmploymentType
+  organizationId?: string
 }
 
 export interface BookingAddress {
@@ -119,6 +150,9 @@ export interface Booking {
   id: string
   customerId: string
   technicianId?: string
+  /** Provider org handling the job (company pool or independent tech's org). */
+  organizationId?: string
+  assignmentMode?: AssignmentMode
   categoryId: ServiceCategoryId
   problemId: string
   description: string
@@ -179,6 +213,8 @@ export interface AppState {
   invoices: Invoice[]
   discountCodes: DiscountCode[]
   pricingOverrides: PricingOverride[]
+  organizations: ProviderOrganization[]
+  organizationMembers: OrganizationMember[]
   sessionUserId: string | null
   locale: 'en' | 'ar'
 }

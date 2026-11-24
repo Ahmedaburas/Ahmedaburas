@@ -44,10 +44,26 @@ export function AdminTechnicians() {
   const { state, actions } = useStore()
   const { t, displayName, categoryLabel } = useI18n()
   const techs = state.users.filter((u) => u.role === 'technician')
+  const companies = state.organizations.filter((o) => o.kind === 'company')
 
   return (
     <div>
       <h1 className="mb-6 text-2xl font-bold text-navy-900">{t('technicians')}</h1>
+      {companies.length > 0 && (
+        <div className="mb-6 grid gap-3 sm:grid-cols-2">
+          {companies.map((c) => (
+            <div key={c.id} className="card-surface border-teal-100 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">
+                {t('maintenanceCompany')}
+              </p>
+              <p className="mt-1 font-semibold text-navy-900">{displayName(c.name, c.nameAr)}</p>
+              <p className="text-xs text-navy-700/55">
+                CR {c.commercialRegistration || '—'} · {c.licenseNumber || '—'}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         {techs.map((tech) => {
           const jobs = state.bookings.filter((b) => b.technicianId === tech.id).length
@@ -84,6 +100,15 @@ export function AdminTechnicians() {
               </div>
               <p className="mt-3 text-sm text-navy-700/65">
                 {tech.specialties?.map((s) => categoryLabel(s)).join(' · ')}
+              </p>
+              <p className="mt-1 text-xs text-navy-700/45">
+                {tech.employmentType === 'company' ? t('maintenanceCompany') : t('independentTech')}
+                {tech.organizationId
+                  ? ` · ${displayName(
+                      state.organizations.find((o) => o.id === tech.organizationId)?.name ?? '',
+                      state.organizations.find((o) => o.id === tech.organizationId)?.nameAr ?? '',
+                    )}`
+                  : ''}
               </p>
               <p className="mt-1 text-xs text-navy-700/45">{tech.phone}</p>
             </div>

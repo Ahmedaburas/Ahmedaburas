@@ -56,6 +56,26 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  signupProvider: (data: {
+    kind: 'independent' | 'company'
+    name: string
+    nameAr?: string
+    email: string
+    phone: string
+    password: string
+    cityId?: string
+    districtId?: string
+    specialties?: ServiceCategoryId[]
+    companyName?: string
+    companyNameAr?: string
+    commercialRegistration?: string
+    licenseNumber?: string
+  }) =>
+    request<{ token: string; user: User; organization: unknown }>('/auth/signup/provider', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
 
   bootstrap: (locale: 'en' | 'ar') =>
@@ -88,10 +108,10 @@ export const api = {
       body: JSON.stringify({ status, note }),
     }),
 
-  assignTechnician: (bookingId: string, technicianId: string) =>
+  assignTechnician: (bookingId: string, technicianId?: string, organizationId?: string) =>
     request<{ booking: Booking }>(`/bookings/${bookingId}/assign`, {
       method: 'POST',
-      body: JSON.stringify({ technicianId }),
+      body: JSON.stringify({ technicianId, organizationId }),
     }),
 
   addPhotos: (bookingId: string, photos: JobPhoto[]) =>

@@ -29,13 +29,17 @@ export function AdminOverview() {
     .reduce((s, i) => s + i.totalSar, 0)
   const customers = state.users.filter((u) => u.role === 'customer').length
   const technicians = state.users.filter((u) => u.role === 'technician').length
+  const providers = state.organizations.filter((o) => o.kind === 'company').length
+  const freelancers = state.organizations.filter((o) => o.kind === 'independent').length
 
   return (
     <div>
       <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-navy-900">{t('overview')}</h1>
-          <p className="text-sm text-navy-700/55">{t('brand')} · {t('dashboard')}</p>
+          <p className="text-sm text-navy-700/55">
+            {t('brand')} · {t('jubail')} · {t('dashboard')}
+          </p>
         </div>
         <button type="button" className="btn-secondary" onClick={() => void actions.resetDemoData()}>
           {t('resetDemo')}
@@ -51,6 +55,8 @@ export function AdminOverview() {
         <StatCard label={t('revenue')} value={formatSar(revenue)} icon={<CircleDollarSign className="h-4 w-4" />} />
         <StatCard label={t('customers')} value={customers} icon={<Users className="h-4 w-4" />} />
         <StatCard label={t('technicians')} value={technicians} icon={<Wrench className="h-4 w-4" />} />
+        <StatCard label={t('maintenanceCompany')} value={providers} icon={<Users className="h-4 w-4" />} />
+        <StatCard label={t('independentTech')} value={freelancers} icon={<Wrench className="h-4 w-4" />} />
       </div>
 
       <div className="mt-8">

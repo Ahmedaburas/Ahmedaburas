@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { SAUDI_CITIES } from '../config/cities'
+import { LAUNCH_CITY_ID, serviceAreaCities } from '../config/cities'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { Logo } from '../components/Logo'
 import { useI18n } from '../i18n'
@@ -10,19 +10,21 @@ export function Signup() {
   const { t, locale } = useI18n()
   const { actions } = useStore()
   const navigate = useNavigate()
+  const cities = serviceAreaCities()
+  const launch = cities.find((c) => c.id === LAUNCH_CITY_ID) ?? cities[0]
   const [form, setForm] = useState({
     name: '',
     email: '',
     phone: '',
     password: '',
-    cityId: 'riyadh',
-    districtId: 'olaya',
+    cityId: launch.id,
+    districtId: launch.districts[0]?.id ?? '',
   })
   const [error, setError] = useState('')
 
   const districts = useMemo(
-    () => SAUDI_CITIES.find((c) => c.id === form.cityId)?.districts ?? [],
-    [form.cityId],
+    () => cities.find((c) => c.id === form.cityId)?.districts ?? [],
+    [cities, form.cityId],
   )
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -103,7 +105,7 @@ export function Signup() {
                 className="input-field"
                 value={form.cityId}
                 onChange={(e) => {
-                  const city = SAUDI_CITIES.find((c) => c.id === e.target.value)!
+                  const city = cities.find((c) => c.id === e.target.value)!
                   setForm({
                     ...form,
                     cityId: city.id,
@@ -111,9 +113,10 @@ export function Signup() {
                   })
                 }}
               >
-                {SAUDI_CITIES.map((c) => (
+                {cities.map((c) => (
                   <option key={c.id} value={c.id}>
                     {locale === 'ar' ? c.nameAr : c.nameEn}
+                    {c.tier === 'launch' ? ` · ${t('launchMarket')}` : ''}
                   </option>
                 ))}
               </select>
@@ -143,6 +146,10 @@ export function Signup() {
           {t('alreadyHaveAccount')}{' '}
           <Link to="/login" className="font-semibold text-teal-600 hover:underline">
             {t('signIn')}
+          </Link>
+          {' · '}
+          <Link to="/signup/provider" className="font-semibold text-teal-600 hover:underline">
+            {t('joinAsProvider')}
           </Link>
         </p>
       </div>

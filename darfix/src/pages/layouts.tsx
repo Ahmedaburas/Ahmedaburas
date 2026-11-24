@@ -47,3 +47,16 @@ export function AdminLayout() {
     />
   )
 }
+
+export function ProviderLayout() {
+  const { t } = useI18n()
+  return (
+    <AppShell
+      title={t('maintenanceCompany')}
+      nav={[
+        { to: '/provider', label: t('dashboard') },
+        { to: '/provider/notifications', label: t('notifications') },
+      ]}
+    />
+  )
+}

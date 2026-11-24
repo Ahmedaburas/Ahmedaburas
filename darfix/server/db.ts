@@ -13,6 +13,14 @@ export const db = new Database(dbPath)
 db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
 
+/** Bump when seed shape changes so existing DBs reseed on next start. */
+export const SEED_VERSION = 'jubail-providers-1'
+
+function hasColumn(table: string, column: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+  return cols.some((c) => c.name === column)
+}
+
 export function migrate() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -135,7 +143,44 @@ export function migrate() {
       created_at TEXT NOT NULL,
       decided_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS provider_organizations (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      name TEXT NOT NULL,
+      name_ar TEXT NOT NULL,
+      city_id TEXT NOT NULL,
+      phone TEXT,
+      email TEXT,
+      commercial_registration TEXT,
+      license_number TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS organization_members (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL REFERENCES provider_organizations(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      member_role TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      UNIQUE(organization_id, user_id)
+    );
   `)
+
+  if (!hasColumn('users', 'employment_type')) {
+    db.exec(`ALTER TABLE users ADD COLUMN employment_type TEXT`)
+  }
+  if (!hasColumn('users', 'organization_id')) {
+    db.exec(`ALTER TABLE users ADD COLUMN organization_id TEXT`)
+  }
+  if (!hasColumn('bookings', 'organization_id')) {
+    db.exec(`ALTER TABLE bookings ADD COLUMN organization_id TEXT`)
+  }
+  if (!hasColumn('bookings', 'assignment_mode')) {
+    db.exec(`ALTER TABLE bookings ADD COLUMN assignment_mode TEXT`)
+  }
 }
 
 export function uid(prefix: string) {

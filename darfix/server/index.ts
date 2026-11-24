@@ -8,6 +8,8 @@ import {
   mapDiscount,
   mapInvoice,
   mapNotification,
+  mapOrganization,
+  mapOrgMember,
   mapQuotation,
   mapUser,
 } from './mappers'
@@ -105,17 +107,38 @@ function getEffectiveFee(categoryId: string, problemId: string) {
   return defaults[`${categoryId}:${problemId}`] ?? 150
 }
 
+function userOrgId(userId: string): string | undefined {
+  const row = db.prepare(`SELECT organization_id FROM users WHERE id = ?`).get(userId) as
+    | { organization_id: string | null }
+    | undefined
+  return row?.organization_id || undefined
+}
+
 function loadBootstrap(userId: string, role: string, locale: 'en' | 'ar') {
   const users = db
     .prepare(`SELECT * FROM users`)
     .all()
     .map((u) => mapUser(u as Record<string, unknown>))
 
+  const organizations = db
+    .prepare(`SELECT * FROM provider_organizations ORDER BY name`)
+    .all()
+    .map((o) => mapOrganization(o as Record<string, unknown>))
+
+  const organizationMembers = db
+    .prepare(`SELECT * FROM organization_members`)
+    .all()
+    .map((m) => mapOrgMember(m as Record<string, unknown>))
+
   let bookings = db.prepare(`SELECT * FROM bookings ORDER BY created_at DESC`).all().map((b) =>
     mapBooking(b as Record<string, unknown>),
   )
   if (role === 'customer') bookings = bookings.filter((b) => b.customerId === userId)
   if (role === 'technician') bookings = bookings.filter((b) => b.technicianId === userId)
+  if (role === 'provider') {
+    const orgId = userOrgId(userId)
+    bookings = bookings.filter((b) => b.organizationId === orgId)
+  }
 
   const notifications = db
     .prepare(`SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC`)
@@ -152,6 +175,22 @@ function loadBootstrap(userId: string, role: string, locale: 'en' | 'ar') {
     baseFeeSar: p.base_fee_sar,
   }))
 
+  let visibleOrgs = organizations
+  let visibleMembers = organizationMembers
+  if (role === 'provider') {
+    const orgId = userOrgId(userId)
+    visibleOrgs = organizations.filter((o) => o.id === orgId)
+    visibleMembers = organizationMembers.filter((m) => m.organizationId === orgId)
+  } else if (role === 'technician') {
+    const orgId = userOrgId(userId)
+    visibleOrgs = organizations.filter((o) => o.id === orgId)
+    visibleMembers = organizationMembers.filter((m) => m.organizationId === orgId)
+  } else if (role === 'customer') {
+    const orgIds = new Set(bookings.map((b) => b.organizationId).filter(Boolean) as string[])
+    visibleOrgs = organizations.filter((o) => orgIds.has(o.id))
+    visibleMembers = organizationMembers.filter((m) => orgIds.has(m.organizationId))
+  }
+
   return {
     users: users.map((u) => ({ ...u, password: undefined })),
     bookings,
@@ -160,6 +199,8 @@ function loadBootstrap(userId: string, role: string, locale: 'en' | 'ar') {
     invoices,
     discountCodes: role === 'admin' || role === 'customer' ? discountCodes : [],
     pricingOverrides,
+    organizations: visibleOrgs,
+    organizationMembers: visibleMembers,
     sessionUserId: userId,
     locale,
   }
@@ -209,13 +250,139 @@ app.post('/api/auth/signup', (req, res) => {
     email,
     phoneNorm,
     bcrypt.hashSync(password, 8),
-    cityId ?? null,
-    districtId ?? null,
+    cityId ?? 'jubail',
+    districtId ?? 'fanateer',
     new Date().toISOString(),
   )
   const token = createSession(id)
   const user = mapUser(db.prepare(`SELECT * FROM users WHERE id = ?`).get(id) as Record<string, unknown>)
   res.status(201).json({ token, user })
+})
+
+/** Independent technician or maintenance company onboarding. */
+app.post('/api/auth/signup/provider', (req, res) => {
+  const body = req.body as {
+    kind?: 'independent' | 'company'
+    name?: string
+    nameAr?: string
+    email?: string
+    phone?: string
+    password?: string
+    cityId?: string
+    districtId?: string
+    specialties?: string[]
+    companyName?: string
+    companyNameAr?: string
+    commercialRegistration?: string
+    licenseNumber?: string
+  }
+  const {
+    kind,
+    name,
+    nameAr,
+    email,
+    phone,
+    password,
+    cityId = 'jubail',
+    districtId,
+    specialties = ['plumbing'],
+    companyName,
+    companyNameAr,
+    commercialRegistration,
+    licenseNumber,
+  } = body
+
+  if (!kind || !name || !email || !phone || !password) {
+    return res.status(400).json({ error: 'Missing required fields' })
+  }
+  if (kind === 'company' && !companyName) {
+    return res.status(400).json({ error: 'Company name required' })
+  }
+  const exists = db.prepare(`SELECT id FROM users WHERE lower(email) = lower(?)`).get(email)
+  if (exists) return res.status(409).json({ error: 'Email already registered' })
+
+  const phoneNorm = phone.startsWith('+') ? phone : `+966${phone.replace(/^0/, '')}`
+  const now = new Date().toISOString()
+  const orgId = uid('org')
+  const userId = kind === 'company' ? uid('prov') : uid('tech')
+  const orgName = kind === 'company' ? companyName! : `${name} (Independent)`
+  const orgNameAr =
+    kind === 'company' ? companyNameAr || companyName! : `${nameAr || name} (مستقل)`
+
+  const create = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO provider_organizations (
+        id, kind, name, name_ar, city_id, phone, email,
+        commercial_registration, license_number, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?)`,
+    ).run(
+      orgId,
+      kind,
+      orgName,
+      orgNameAr,
+      cityId,
+      phoneNorm,
+      email,
+      commercialRegistration ?? null,
+      licenseNumber ?? null,
+      now,
+    )
+
+    if (kind === 'company') {
+      db.prepare(
+        `INSERT INTO users (
+          id, role, name, name_ar, email, phone, password_hash, city_id, district_id,
+          active, avatar_color, employment_type, organization_id, created_at
+        ) VALUES (?, 'provider', ?, ?, ?, ?, ?, ?, ?, 1, '#0F766E', 'company', ?, ?)`,
+      ).run(
+        userId,
+        name,
+        nameAr || name,
+        email,
+        phoneNorm,
+        bcrypt.hashSync(password, 8),
+        cityId,
+        districtId ?? null,
+        orgId,
+        now,
+      )
+      db.prepare(
+        `INSERT INTO organization_members (id, organization_id, user_id, member_role, active, created_at)
+         VALUES (?, ?, ?, 'owner', 1, ?)`,
+      ).run(uid('mem'), orgId, userId, now)
+    } else {
+      db.prepare(
+        `INSERT INTO users (
+          id, role, name, name_ar, email, phone, password_hash, city_id, district_id,
+          specialties, rating, review_count, active, avatar_color, employment_type, organization_id, created_at
+        ) VALUES (?, 'technician', ?, ?, ?, ?, ?, ?, ?, ?, 5.0, 0, 1, '#0B3A4A', 'independent', ?, ?)`,
+      ).run(
+        userId,
+        name,
+        nameAr || name,
+        email,
+        phoneNorm,
+        bcrypt.hashSync(password, 8),
+        cityId,
+        districtId ?? null,
+        JSON.stringify(specialties),
+        orgId,
+        now,
+      )
+      db.prepare(
+        `INSERT INTO organization_members (id, organization_id, user_id, member_role, active, created_at)
+         VALUES (?, ?, ?, 'owner', 1, ?)`,
+      ).run(uid('mem'), orgId, userId, now)
+    }
+  })
+
+  create()
+  const token = createSession(userId)
+  const user = mapUser(db.prepare(`SELECT * FROM users WHERE id = ?`).get(userId) as Record<string, unknown>)
+  const organization = mapOrganization(
+    db.prepare(`SELECT * FROM provider_organizations WHERE id = ?`).get(orgId) as Record<string, unknown>,
+  )
+  res.status(201).json({ token, user, organization })
 })
 
 app.post('/api/auth/logout', auth, (req: Authed, res) => {
@@ -443,21 +610,89 @@ app.patch('/api/bookings/:id/status', auth, (req: Authed, res) => {
 })
 
 app.post('/api/bookings/:id/assign', auth, (req: Authed, res) => {
-  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
-  const { technicianId, allowReassign } = req.body as {
-    technicianId: string
+  const { technicianId, organizationId, allowReassign } = req.body as {
+    technicianId?: string
+    organizationId?: string
     allowReassign?: boolean
   }
+  if (!technicianId && !organizationId) {
+    return res.status(400).json({ error: 'technicianId or organizationId required' })
+  }
+
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  const tech = db.prepare(`SELECT * FROM users WHERE id = ? AND role = 'technician'`).get(technicianId) as
-    | Record<string, unknown>
-    | undefined
-  if (!booking || !tech) return res.status(404).json({ error: 'Not found' })
+  if (!booking) return res.status(404).json({ error: 'Not found' })
+
+  const isAdmin = req.userRole === 'admin'
+  const isProvider = req.userRole === 'provider'
+  if (!isAdmin && !isProvider) return res.status(403).json({ error: 'Forbidden' })
+
+  if (isProvider) {
+    const myOrg = userOrgId(req.userId!)
+    if (!myOrg) return res.status(403).json({ error: 'No organization' })
+    if (booking.organization_id && booking.organization_id !== myOrg) {
+      return res.status(403).json({ error: 'Booking not in your organization' })
+    }
+    if (organizationId && organizationId !== myOrg) {
+      return res.status(403).json({ error: 'Cannot assign outside your organization' })
+    }
+  }
+
+  let tech: Record<string, unknown> | undefined
+  let org: Record<string, unknown> | undefined
+  let mode: 'named_tech' | 'company_pool' = 'named_tech'
+  let resolvedOrgId = organizationId
+  let resolvedTechId = technicianId ?? null
+  let stepNote = ''
+
+  if (technicianId) {
+    tech = db
+      .prepare(`SELECT * FROM users WHERE id = ? AND role = 'technician'`)
+      .get(technicianId) as Record<string, unknown> | undefined
+    if (!tech) return res.status(404).json({ error: 'Technician not found' })
+    if (isProvider && tech.organization_id !== userOrgId(req.userId!)) {
+      return res.status(403).json({ error: 'Technician not in your organization' })
+    }
+    resolvedOrgId = (tech.organization_id as string) || organizationId
+    mode = 'named_tech'
+    stepNote = `Assigned to ${tech.name}`
+  }
+
+  if (organizationId && !technicianId) {
+    org = db.prepare(`SELECT * FROM provider_organizations WHERE id = ?`).get(organizationId) as
+      | Record<string, unknown>
+      | undefined
+    if (!org) return res.status(404).json({ error: 'Organization not found' })
+    if (org.kind === 'independent') {
+      const ownerTech = db
+        .prepare(
+          `SELECT u.* FROM users u
+           JOIN organization_members m ON m.user_id = u.id
+           WHERE m.organization_id = ? AND u.role = 'technician' AND m.active = 1
+           LIMIT 1`,
+        )
+        .get(organizationId) as Record<string, unknown> | undefined
+      if (!ownerTech) return res.status(404).json({ error: 'Independent tech not found' })
+      tech = ownerTech
+      resolvedTechId = ownerTech.id as string
+      mode = 'named_tech'
+      stepNote = `Assigned to independent tech ${ownerTech.name}`
+    } else {
+      mode = 'company_pool'
+      resolvedTechId = null
+      stepNote = `Assigned to company pool: ${org.name}`
+    }
+  } else if (resolvedOrgId) {
+    org = db.prepare(`SELECT * FROM provider_organizations WHERE id = ?`).get(resolvedOrgId) as
+      | Record<string, unknown>
+      | undefined
+  }
+
   if (
     booking.technician_id &&
-    booking.technician_id !== technicianId &&
+    resolvedTechId &&
+    booking.technician_id !== resolvedTechId &&
     !allowReassign
   ) {
     return res.status(409).json({
@@ -467,40 +702,87 @@ app.post('/api/bookings/:id/assign', auth, (req: Authed, res) => {
       currentTechnicianId: booking.technician_id,
     })
   }
+
   const now = new Date().toISOString()
   const history = JSON.parse((booking.status_history as string) || '[]') as object[]
-  history.push({ status: 'technician_assigned', at: now, by: req.userId })
+  const nextStatus = resolvedTechId ? 'technician_assigned' : 'confirmed'
+  history.push({
+    status: nextStatus,
+    at: now,
+    by: req.userId,
+    note: stepNote,
+  })
+  const prevProcess = JSON.parse((booking.process as string) || '{}') as BookingProcess
   const process: BookingProcess = {
     ...emptyProcess(),
-    ...JSON.parse((booking.process as string) || '{}'),
+    ...prevProcess,
     workChecklist:
-      JSON.parse((booking.process as string) || '{}').workChecklist?.length
-        ? JSON.parse(booking.process as string).workChecklist
+      prevProcess.workChecklist?.length
+        ? prevProcess.workChecklist
         : defaultChecklist(booking.category_id as string),
-    currentStepNote: `Assigned to ${tech.name}`,
+    currentStepNote: stepNote,
   }
-  db.prepare(
-    `UPDATE bookings SET technician_id = ?, status = 'technician_assigned', status_history = ?, process = ?, updated_at = ? WHERE id = ?`,
-  ).run(technicianId, JSON.stringify(history), JSON.stringify(process), now, req.params.id)
 
-  notify({
-    userId: booking.customer_id as string,
-    type: 'technician_assigned',
-    titleEn: 'Technician assigned',
-    titleAr: 'تم تعيين فني',
-    bodyEn: `${tech.name} has been assigned to booking ${req.params.id}.`,
-    bodyAr: `تم تعيين ${tech.name_ar} للحجز ${req.params.id}.`,
-    bookingId: req.params.id,
-  })
-  notify({
-    userId: technicianId,
-    type: 'general',
-    titleEn: 'New job assigned',
-    titleAr: 'مهمة جديدة',
-    bodyEn: `You were assigned booking ${req.params.id}.`,
-    bodyAr: `تم تعيين الحجز ${req.params.id} لك.`,
-    bookingId: req.params.id,
-  })
+  db.prepare(
+    `UPDATE bookings SET technician_id = ?, organization_id = ?, assignment_mode = ?,
+     status = ?, status_history = ?, process = ?, updated_at = ? WHERE id = ?`,
+  ).run(
+    resolvedTechId,
+    resolvedOrgId ?? null,
+    mode,
+    nextStatus,
+    JSON.stringify(history),
+    JSON.stringify(process),
+    now,
+    req.params.id,
+  )
+
+  if (resolvedTechId && tech) {
+    notify({
+      userId: booking.customer_id as string,
+      type: 'technician_assigned',
+      titleEn: 'Technician assigned',
+      titleAr: 'تم تعيين فني',
+      bodyEn: `${tech.name} has been assigned to booking ${req.params.id}.`,
+      bodyAr: `تم تعيين ${tech.name_ar} للحجز ${req.params.id}.`,
+      bookingId: req.params.id,
+    })
+    notify({
+      userId: resolvedTechId,
+      type: 'general',
+      titleEn: 'New job assigned',
+      titleAr: 'مهمة جديدة',
+      bodyEn: `You were assigned booking ${req.params.id}.`,
+      bodyAr: `تم تعيين الحجز ${req.params.id} لك.`,
+      bookingId: req.params.id,
+    })
+  } else if (org) {
+    notify({
+      userId: booking.customer_id as string,
+      type: 'booking_confirmed',
+      titleEn: 'Provider company assigned',
+      titleAr: 'تم تعيين شركة صيانة',
+      bodyEn: `${org.name} will handle booking ${req.params.id} — a technician will be named soon.`,
+      bodyAr: `ستتولى ${org.name_ar} الحجز ${req.params.id} — سيتم تعيين فني قريباً.`,
+      bookingId: req.params.id,
+    })
+    const owners = db
+      .prepare(
+        `SELECT user_id FROM organization_members WHERE organization_id = ? AND member_role = 'owner' AND active = 1`,
+      )
+      .all(resolvedOrgId) as { user_id: string }[]
+    for (const o of owners) {
+      notify({
+        userId: o.user_id,
+        type: 'general',
+        titleEn: 'New pool job',
+        titleAr: 'مهمة جديدة للمجموعة',
+        bodyEn: `Booking ${req.params.id} was added to your company pool.`,
+        bodyAr: `أُضيف الحجز ${req.params.id} إلى مجموعة شركتك.`,
+        bookingId: req.params.id,
+      })
+    }
+  }
 
   res.json({
     booking: mapBooking(
@@ -1007,8 +1289,15 @@ app.post('/api/agent/approvals/:id/decide', auth, (req: Authed, res) => {
           note: `Reassigned (approved) to ${tech.name}`,
         })
         db.prepare(
-          `UPDATE bookings SET technician_id = ?, status = 'technician_assigned', status_history = ?, updated_at = ? WHERE id = ?`,
-        ).run(payload.technicianId, JSON.stringify(history), now, bookingId)
+          `UPDATE bookings SET technician_id = ?, organization_id = ?, assignment_mode = 'named_tech',
+           status = 'technician_assigned', status_history = ?, updated_at = ? WHERE id = ?`,
+        ).run(
+          payload.technicianId,
+          (tech.organization_id as string) || null,
+          JSON.stringify(history),
+          now,
+          bookingId,
+        )
         applied = { bookingId, technicianId: payload.technicianId, status: 'technician_assigned' }
       }
     }

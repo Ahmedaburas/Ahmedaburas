@@ -111,12 +111,19 @@ export function AdminBookingDetail() {
       (u.active ?? true) &&
       (!booking || u.specialties?.includes(booking.categoryId)),
   )
+  const companies = state.organizations.filter((o) => o.kind === 'company' && o.status === 'active')
+  const independents = state.organizations.filter(
+    (o) => o.kind === 'independent' && o.status === 'active',
+  )
   const [techId, setTechId] = useState('')
+  const [orgId, setOrgId] = useState('')
   const [quoteLines, setQuoteLines] = useState({ label: '', amount: '' })
 
   if (!booking) {
     return <EmptyState title={t('noData')} />
   }
+
+  const assignedOrg = state.organizations.find((o) => o.id === booking.organizationId)
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -143,43 +150,100 @@ export function AdminBookingDetail() {
           <span className="text-navy-700/50">{t('address')}: </span>
           {booking.address.street}
         </p>
+        {assignedOrg && (
+          <p>
+            <span className="text-navy-700/50">{t('provider')}: </span>
+            {displayName(assignedOrg.name, assignedOrg.nameAr)}
+            {booking.assignmentMode === 'company_pool' ? ` · ${t('companyPool')}` : ''}
+          </p>
+        )}
       </div>
 
-      <div className="card-surface p-5">
-        <h2 className="mb-3 font-semibold">{t('assignTechnician')}</h2>
-        <div className="flex flex-wrap gap-2">
-          <select
-            className="input-field max-w-xs"
-            value={techId || booking.technicianId || ''}
-            onChange={(e) => setTechId(e.target.value)}
-          >
-            <option value="">—</option>
-            {techs.map((tech) => (
-              <option key={tech.id} value={tech.id}>
-                {displayName(tech.name, tech.nameAr)} ★{tech.rating}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={!techId && !booking.technicianId}
-            onClick={() =>
-              void actions.assignTechnician(booking.id, techId || booking.technicianId!)
-            }
-          >
-            {booking.technicianId ? t('reassign') : t('assignTechnician')}
-          </button>
-          {booking.status === 'new_request' && (
+      <div className="card-surface p-5 space-y-4">
+        <h2 className="font-semibold">{t('assignTechnician')}</h2>
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-navy-700/45">
+            {t('independentTech')}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <select
+              className="input-field max-w-xs"
+              value={techId || booking.technicianId || ''}
+              onChange={(e) => {
+                setTechId(e.target.value)
+                setOrgId('')
+              }}
+            >
+              <option value="">—</option>
+              {techs.map((tech) => {
+                const org = state.organizations.find((o) => o.id === tech.organizationId)
+                const label =
+                  tech.employmentType === 'company'
+                    ? `${displayName(tech.name, tech.nameAr)} · ${org ? displayName(org.name, org.nameAr) : t('maintenanceCompany')}`
+                    : `${displayName(tech.name, tech.nameAr)} · ${t('independentTech')} ★${tech.rating}`
+                return (
+                  <option key={tech.id} value={tech.id}>
+                    {label}
+                  </option>
+                )
+              })}
+            </select>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!techId && !booking.technicianId}
+              onClick={() =>
+                void actions.assignTechnician(booking.id, techId || booking.technicianId!)
+              }
+            >
+              {booking.technicianId ? t('reassign') : t('assignTechnician')}
+            </button>
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-navy-700/45">
+            {t('assignCompanyPool')}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <select
+              className="input-field max-w-xs"
+              value={orgId}
+              onChange={(e) => {
+                setOrgId(e.target.value)
+                setTechId('')
+              }}
+            >
+              <option value="">—</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {displayName(c.name, c.nameAr)}
+                </option>
+              ))}
+              {independents.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {displayName(c.name, c.nameAr)} ({t('independentTech')})
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => void actions.updateBookingStatus(booking.id, 'confirmed')}
+              disabled={!orgId}
+              onClick={() => void actions.assignTechnician(booking.id, undefined, orgId)}
             >
-              {t('confirm')}
+              {t('assignCompanyPool')}
             </button>
-          )}
+          </div>
         </div>
+        {booking.status === 'new_request' && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => void actions.updateBookingStatus(booking.id, 'confirmed')}
+          >
+            {t('confirm')}
+          </button>
+        )}
       </div>
 
       <div className="card-surface p-5">

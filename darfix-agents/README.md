@@ -25,8 +25,8 @@ flowchart TD
 ```
 
 1. Request hits **Shift Lead**.
-2. Lead hands off to **Dispatcher** → confirm → assign technician.
-3. **Field Coach** tracks progress after assignment.
+2. Lead hands off to **Dispatcher** → confirm → assign **independent technician** (named) **or** **maintenance company pool** (org then names a tech).
+3. **Field Coach** tracks progress after a named technician is on the job.
 4. From progress, **Customer Support** covers status/ETA and **Ops Analyst** updates KPIs.
 5. Dispatcher, Field Coach, Support, and Ops Analyst all report results back to Shift Lead.
 

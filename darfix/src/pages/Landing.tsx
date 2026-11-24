@@ -14,7 +14,9 @@ export function Landing() {
       ? '/admin'
       : currentUser?.role === 'technician'
         ? '/tech'
-        : '/app'
+        : currentUser?.role === 'provider'
+          ? '/provider'
+          : '/app'
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -93,7 +95,7 @@ export function Landing() {
             <div className="mb-6 flex items-center justify-between text-white/80">
               <span className="text-sm font-medium">{t('howItWorks')}</span>
               <span className="rounded-full bg-teal-500/20 px-3 py-1 text-xs font-semibold text-teal-300">
-                KSA
+                {t('jubail')}
               </span>
             </div>
             <div className="space-y-4">

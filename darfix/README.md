@@ -1,6 +1,6 @@
 # DARFIX
 
-Premium home maintenance SaaS for Saudi Arabia — plumbing and electrical bookings for homeowners and tenants, with technician workflows and an admin operations dashboard.
+Premium home maintenance SaaS launching in **Jubail, Saudi Arabia** — plumbing and electrical bookings for homeowners and tenants, with two supply routes (maintenance companies + independent technicians), technician workflows, and an admin operations dashboard.
 
 ## AI ops crew
 
@@ -35,11 +35,12 @@ SQLite database file: `data/darfix.sqlite` (created automatically and seeded on 
 
 Password for all: `demo123`
 
-| Role        | Email                 |
-|-------------|-----------------------|
-| Customer    | `customer@darfix.sa` |
-| Technician  | `tech@darfix.sa`     |
-| Admin       | `admin@darfix.sa`    |
+| Role                         | Email                   |
+|------------------------------|-------------------------|
+| Customer (Jubail)            | `customer@darfix.sa`   |
+| Independent technician       | `tech@darfix.sa`       |
+| Maintenance company (owner)  | `company@darfix.sa`    |
+| Admin                        | `admin@darfix.sa`      |
 
 Use the quick-login cards on the login page. State is shared through the **SQLite backend** — a booking created as a customer appears for admin, assignment reaches the technician, and status/notification updates flow back to the customer (UI also polls every 8s).
 
@@ -47,11 +48,12 @@ Reset demo data from **Admin → Overview → Reset demo data**.
 
 ## Features
 
-- **Customer:** sign up/login, book plumbing or electrical jobs, live process tracker (pipeline, ETA, checklist, progress notes), approve extra work, pay invoices (mock), rate reviews, WhatsApp support.
-- **Technician:** assigned jobs, customer location/contact, status updates with notes, checklist, progress notes, before/after photos, materials & labor, extra-work requests, final job report.
-- **Admin:** overview KPIs, booking assign/reassign, process visibility, customers, technicians, pricing overrides, reviews, discount codes, reports.
+- **Customer:** sign up/login, book plumbing or electrical jobs in Jubail (nearby EP cities available), live process tracker, approve extra work, pay invoices (mock), rate reviews, WhatsApp support.
+- **Independent technician:** self-serve provider signup, named assignment from Dispatcher/admin, field job workflow.
+- **Maintenance company:** provider signup + company dashboard with **job pool** — assign org technicians to pool bookings.
+- **Admin:** overview KPIs, assign to named tech **or** company pool, customers/providers, pricing, reviews, discounts, reports.
 - **i18n:** English / Arabic with full RTL layout and language switcher.
-- **Saudi market:** SAR pricing, Saudi cities/districts, `+966` phones.
+- **Launch market:** Jubail districts + nearby Dammam/Khobar; SAR pricing; `+966` phones.
 
 ## Stack
 
@@ -80,11 +82,12 @@ darfix/
 | Method | Path | Notes |
 |--------|------|-------|
 | POST | `/api/auth/login` | email/password → token |
-| POST | `/api/auth/signup` | create customer |
-| GET | `/api/bootstrap` | full role-scoped state |
+| POST | `/api/auth/signup` | create customer (defaults Jubail) |
+| POST | `/api/auth/signup/provider` | independent tech or company |
+| GET | `/api/bootstrap` | full role-scoped state (+ orgs) |
 | POST | `/api/bookings` | create booking |
 | PATCH | `/api/bookings/:id/status` | status + process timestamps |
-| POST | `/api/bookings/:id/assign` | admin assign tech |
+| POST | `/api/bookings/:id/assign` | admin/provider assign tech or company pool |
 | POST | `/api/bookings/:id/process/note` | progress note |
 | PATCH | `/api/bookings/:id/process/checklist` | toggle checklist |
 | POST | `/api/demo/reset` | admin reseeds DB |
