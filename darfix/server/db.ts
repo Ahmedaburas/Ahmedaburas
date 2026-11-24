@@ -121,6 +121,20 @@ export function migrate() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS agent_approvals (
+      id TEXT PRIMARY KEY,
+      action TEXT NOT NULL,
+      booking_id TEXT,
+      payload TEXT NOT NULL DEFAULT '{}',
+      rationale TEXT NOT NULL,
+      proposed_by TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      decided_by TEXT,
+      decision_note TEXT,
+      created_at TEXT NOT NULL,
+      decided_at TEXT
+    );
   `)
 }
 

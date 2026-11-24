@@ -444,7 +444,10 @@ app.patch('/api/bookings/:id/status', auth, (req: Authed, res) => {
 
 app.post('/api/bookings/:id/assign', auth, (req: Authed, res) => {
   if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
-  const { technicianId } = req.body as { technicianId: string }
+  const { technicianId, allowReassign } = req.body as {
+    technicianId: string
+    allowReassign?: boolean
+  }
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
@@ -452,6 +455,18 @@ app.post('/api/bookings/:id/assign', auth, (req: Authed, res) => {
     | Record<string, unknown>
     | undefined
   if (!booking || !tech) return res.status(404).json({ error: 'Not found' })
+  if (
+    booking.technician_id &&
+    booking.technician_id !== technicianId &&
+    !allowReassign
+  ) {
+    return res.status(409).json({
+      error: 'Reassignment requires shift-lead approval',
+      code: 'requires_approval',
+      action: 'reassign_technician',
+      currentTechnicianId: booking.technician_id,
+    })
+  }
   const now = new Date().toISOString()
   const history = JSON.parse((booking.status_history as string) || '[]') as object[]
   history.push({ status: 'technician_assigned', at: now, by: req.userId })
@@ -869,6 +884,151 @@ app.post('/api/technicians/:id/toggle', auth, (req: Authed, res) => {
     user: mapUser(
       db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.params.id) as Record<string, unknown>,
     ),
+  })
+})
+
+/** Agent crew: propose sensitive actions (cancel, reassign, customer commitment). */
+app.post('/api/agent/approvals', auth, (req: Authed, res) => {
+  if (req.userRole !== 'admin' && req.userRole !== 'technician') {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+  const body = req.body as {
+    action: 'cancel_booking' | 'reassign_technician' | 'customer_commitment'
+    bookingId?: string
+    payload?: Record<string, unknown>
+    rationale: string
+    proposedBy: string
+  }
+  if (!body.action || !body.rationale || !body.proposedBy) {
+    return res.status(400).json({ error: 'action, rationale, proposedBy required' })
+  }
+  const id = uid('apr')
+  const now = new Date().toISOString()
+  db.prepare(
+    `INSERT INTO agent_approvals (id, action, booking_id, payload, rationale, proposed_by, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
+  ).run(
+    id,
+    body.action,
+    body.bookingId ?? null,
+    JSON.stringify(body.payload || {}),
+    body.rationale,
+    body.proposedBy,
+    now,
+  )
+  res.status(201).json({
+    approval: {
+      id,
+      action: body.action,
+      bookingId: body.bookingId ?? null,
+      payload: body.payload || {},
+      rationale: body.rationale,
+      proposedBy: body.proposedBy,
+      status: 'pending',
+      createdAt: now,
+    },
+  })
+})
+
+app.get('/api/agent/approvals', auth, (req: Authed, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  const status = (req.query.status as string) || 'pending'
+  const rows = db
+    .prepare(
+      `SELECT * FROM agent_approvals WHERE status = ? ORDER BY created_at DESC LIMIT 50`,
+    )
+    .all(status) as Record<string, unknown>[]
+  res.json({
+    approvals: rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      bookingId: r.booking_id || null,
+      payload: JSON.parse((r.payload as string) || '{}'),
+      rationale: r.rationale,
+      proposedBy: r.proposed_by,
+      status: r.status,
+      decidedBy: r.decided_by || null,
+      decisionNote: r.decision_note || null,
+      createdAt: r.created_at,
+      decidedAt: r.decided_at || null,
+    })),
+  })
+})
+
+app.post('/api/agent/approvals/:id/decide', auth, (req: Authed, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  const { approve, note } = req.body as { approve: boolean; note?: string }
+  const row = db.prepare(`SELECT * FROM agent_approvals WHERE id = ?`).get(req.params.id) as
+    | Record<string, unknown>
+    | undefined
+  if (!row) return res.status(404).json({ error: 'Not found' })
+  if (row.status !== 'pending') return res.status(409).json({ error: 'Already decided' })
+
+  const now = new Date().toISOString()
+  const status = approve ? 'approved' : 'rejected'
+  db.prepare(
+    `UPDATE agent_approvals SET status = ?, decided_by = ?, decision_note = ?, decided_at = ? WHERE id = ?`,
+  ).run(status, req.userId, note ?? null, now, req.params.id)
+
+  let applied: unknown = null
+  if (approve) {
+    const action = row.action as string
+    const bookingId = row.booking_id as string | null
+    const payload = JSON.parse((row.payload as string) || '{}') as {
+      technicianId?: string
+      message?: string
+    }
+    if (action === 'cancel_booking' && bookingId) {
+      const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(bookingId) as
+        | Record<string, unknown>
+        | undefined
+      if (booking) {
+        const history = JSON.parse((booking.status_history as string) || '[]') as object[]
+        history.push({ status: 'cancelled', at: now, by: req.userId, note: note || 'Approved cancel' })
+        db.prepare(
+          `UPDATE bookings SET status = 'cancelled', status_history = ?, updated_at = ? WHERE id = ?`,
+        ).run(JSON.stringify(history), now, bookingId)
+        applied = { bookingId, status: 'cancelled' }
+      }
+    }
+    if (action === 'reassign_technician' && bookingId && payload.technicianId) {
+      const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(bookingId) as
+        | Record<string, unknown>
+        | undefined
+      const tech = db
+        .prepare(`SELECT * FROM users WHERE id = ? AND role = 'technician'`)
+        .get(payload.technicianId) as Record<string, unknown> | undefined
+      if (booking && tech) {
+        const history = JSON.parse((booking.status_history as string) || '[]') as object[]
+        history.push({
+          status: 'technician_assigned',
+          at: now,
+          by: req.userId,
+          note: `Reassigned (approved) to ${tech.name}`,
+        })
+        db.prepare(
+          `UPDATE bookings SET technician_id = ?, status = 'technician_assigned', status_history = ?, updated_at = ? WHERE id = ?`,
+        ).run(payload.technicianId, JSON.stringify(history), now, bookingId)
+        applied = { bookingId, technicianId: payload.technicianId, status: 'technician_assigned' }
+      }
+    }
+    if (action === 'customer_commitment') {
+      applied = {
+        commitment: payload.message || note || 'Commitment recorded',
+        bookingId,
+      }
+    }
+  }
+
+  res.json({
+    approval: {
+      id: row.id,
+      status,
+      decidedBy: req.userId,
+      decisionNote: note ?? null,
+      decidedAt: now,
+      applied,
+    },
   })
 })
 

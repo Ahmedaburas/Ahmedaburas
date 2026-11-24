@@ -4,11 +4,12 @@ Premium home maintenance SaaS for Saudi Arabia — plumbing and electrical booki
 
 ## AI ops crew
 
-A multi-agent team that operates this API lives in sibling folder [`../darfix-ops-crew`](../darfix-ops-crew):
+A multi-agent team that operates this API lives in sibling folder [`../darfix-agents`](../darfix-agents):
 
-- **Shift lead** + subagents: dispatcher, support, field coach, ops analyst
-- Tools call this Express API (confirm, assign, status, field updates)
-- See `darfix-ops-crew/README.md` for playground commands
+- **Shift Lead** coordinates peers: Dispatcher, Field Coach, Customer Support, Ops Analyst
+- Shared backend with role-scoped tools; cancel / reassign / customer commitments need Shift Lead approval
+- Run all peers: `cd ../darfix-agents && npx @grok/agent-sdk dev .`
+- See [`../darfix-agents/README.md`](../darfix-agents/README.md) (legacy `darfix-ops-crew/` redirects there)
 
 ## Quick start
 
