@@ -2,6 +2,14 @@
 
 Premium home maintenance SaaS for Saudi Arabia — plumbing and electrical bookings for homeowners and tenants, with technician workflows and an admin operations dashboard.
 
+## AI ops crew
+
+A multi-agent team that operates this API lives in sibling folder [`../darfix-ops-crew`](../darfix-ops-crew):
+
+- **Shift lead** + subagents: dispatcher, support, field coach, ops analyst
+- Tools call this Express API (confirm, assign, status, field updates)
+- See `darfix-ops-crew/README.md` for playground commands
+
 ## Quick start
 
 ```bash
