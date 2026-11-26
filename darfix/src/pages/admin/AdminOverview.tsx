@@ -38,7 +38,7 @@ export function AdminOverview() {
         <div>
           <h1 className="text-2xl font-bold text-navy-900">{t('overview')}</h1>
           <p className="text-sm text-navy-700/55">
-            {t('brand')} · {t('jubail')} · {t('dashboard')}
+            {t('brand')} · {t('easternProvince')} · {t('dashboard')}
           </p>
         </div>
         <button type="button" className="btn-secondary" onClick={() => void actions.resetDemoData()}>

@@ -1,15 +1,29 @@
 # DARFIX
 
-Premium home maintenance SaaS launching in **Jubail, Saudi Arabia** — plumbing and electrical bookings for homeowners and tenants, with two supply routes (maintenance companies + independent technicians), technician workflows, and an admin operations dashboard.
+**B2B SaaS Growth & AI Operating System** for maintenance companies — with an integrated demand marketplace. Launch geography: **Eastern Province** (Khobar, Dhahran, Dammam, Jubail).
 
-## AI ops crew
+DARFIX does **not** sell itself as a maintenance operator. It sells **growth, jobs, visibility, and operational control** to partner companies.
 
-A multi-agent team that operates this API lives in sibling folder [`../darfix-agents`](../darfix-agents):
+## Product pillars
 
-- **Shift Lead** coordinates peers: Dispatcher, Field Coach, Customer Support, Ops Analyst
-- Shared backend with role-scoped tools; cancel / reassign / customer commitments need Shift Lead approval
-- Run all peers: `cd ../darfix-agents && npx @grok/agent-sdk dev .`
-- See [`../darfix-agents/README.md`](../darfix-agents/README.md) (legacy `darfix-ops-crew/` redirects there)
+1. Digital storefront  
+2. Lead engine (limited 1–3 offers with deadlines)  
+3. Dispatch system  
+4. AI Control Tower  
+5. Technician network OS  
+
+## Interfaces
+
+| Surface | Who | Job |
+| --- | --- | --- |
+| Customer Portal | Homeowners / tenants | Request → match partner → track → approve quote → pay → rate |
+| Company Dashboard | Partner owners | Lead inbox, pipeline, staff assign, price approvals, Control Tower, plan badge |
+| Technician App | Field techs | Accept/reject → GPS on active jobs → quote → complete |
+| AI Control Tower | Partner + Field Ops agents | Alerts, dispatch suggestions, approval gates |
+
+## AI Control Tower (`../darfix-agents`)
+
+Agents serve **partner companies** (Field Ops lead ≈ Shift Lead; Dispatch; Tech workflow assist; Customer updates; BI). See [`../darfix-agents/README.md`](../darfix-agents/README.md).
 
 ## Quick start
 
@@ -19,91 +33,27 @@ npm install
 npm run dev
 ```
 
-This starts:
-
-- **API** (Express + SQLite) on `http://127.0.0.1:8787`
-- **Web** (Vite) on `http://127.0.0.1:5173` (proxies `/api` → API)
+- **API** `http://127.0.0.1:8787`
+- **Web** `http://localhost:5173`
 
 ```bash
-npm run build   # frontend typecheck + production build
-npm run start   # API only (after build, serve static separately if needed)
+npm run build
 ```
-
-SQLite database file: `data/darfix.sqlite` (created automatically and seeded on first run).
 
 ## Demo accounts
 
-Password for all: `demo123`
+Password: `demo123`
 
-| Role                         | Email                   |
-|------------------------------|-------------------------|
-| Customer (Jubail)            | `customer@darfix.sa`   |
-| Independent technician       | `tech@darfix.sa`       |
-| Maintenance company (owner)  | `company@darfix.sa`    |
-| Admin                        | `admin@darfix.sa`      |
+| Role | Email |
+| --- | --- |
+| Customer (Khobar) | `customer@darfix.sa` |
+| Independent technician | `tech@darfix.sa` |
+| Founding partner (Eastern Home Care) | `company@darfix.sa` |
+| Partner (Dammam Fix Pros) | `dammam@darfix.sa` |
+| Admin | `admin@darfix.sa` |
 
-Use the quick-login cards on the login page. State is shared through the **SQLite backend** — a booking created as a customer appears for admin, assignment reaches the technician, and status/notification updates flow back to the customer (UI also polls every 8s).
-
-Reset demo data from **Admin → Overview → Reset demo data**.
-
-## Features
-
-- **Customer:** sign up/login, book plumbing or electrical jobs in Jubail (nearby EP cities available), live process tracker, approve extra work, pay invoices (mock), rate reviews, WhatsApp support.
-- **Independent technician:** self-serve provider signup, named assignment from Dispatcher/admin, field job workflow.
-- **Maintenance company:** provider signup + company dashboard with **job pool** — assign org technicians to pool bookings.
-- **Admin:** overview KPIs, assign to named tech **or** company pool, customers/providers, pricing, reviews, discounts, reports.
-- **i18n:** English / Arabic with full RTL layout and language switcher.
-- **Launch market:** Jubail districts + nearby Dammam/Khobar; SAR pricing; `+966` phones.
+Partner pricing (proposed): Launch free · Growth 149 · Pro 399 · Business 799 · Enterprise 1500–3500+ SAR/mo. Founding 20: 90 days Pro free, then 299 for 12 months.
 
 ## Stack
 
-- **Frontend:** Vite + React 19 + TypeScript + Tailwind CSS v4 + React Router
-- **Backend:** Express + better-sqlite3 + session tokens (Bearer)
-- **Adapters (mock):** payments, notifications, maps — swap later for real providers
-
-## Project structure
-
-```
-darfix/
-  server/           # Express API, SQLite schema, seed
-  data/             # SQLite DB (gitignored)
-  src/
-    api/            # Frontend API client
-    adapters/       # payments, notifications, maps
-    config/         # service categories & Saudi cities
-    i18n/           # EN/AR dictionaries
-    store/          # React context (API-backed)
-    components/     # shared UI + ProcessTracker
-    pages/          # landing, auth, customer, technician, admin
-```
-
-## API overview
-
-| Method | Path | Notes |
-|--------|------|-------|
-| POST | `/api/auth/login` | email/password → token |
-| POST | `/api/auth/signup` | create customer (defaults Jubail) |
-| POST | `/api/auth/signup/provider` | independent tech or company |
-| GET | `/api/bootstrap` | full role-scoped state (+ orgs) |
-| POST | `/api/bookings` | create booking |
-| PATCH | `/api/bookings/:id/status` | status + process timestamps |
-| POST | `/api/bookings/:id/assign` | admin/provider assign tech or company pool |
-| POST | `/api/bookings/:id/process/note` | progress note |
-| PATCH | `/api/bookings/:id/process/checklist` | toggle checklist |
-| POST | `/api/demo/reset` | admin reseeds DB |
-
-Auth: `Authorization: Bearer <token>`.
-
-## Extension points
-
-| Concern        | Where                                      | Swap-in later                    |
-|----------------|--------------------------------------------|----------------------------------|
-| Payments       | `src/adapters/payments.ts` + pay endpoint  | Moyasar, Tap, Stripe             |
-| Notifications  | `src/adapters/notifications.ts` + server `notify()` | WhatsApp Business, SMS, push |
-| Maps           | `src/adapters/maps.ts`                     | Google Maps / Mapbox             |
-| Categories     | `src/config/services.ts`                   | Add AC, cleaning (v1 = plumbing + electrical only) |
-| Persistence    | `server/db.ts` (SQLite)                    | Postgres / hosted DB             |
-
-## Booking statuses
-
-New request → Confirmed → Technician assigned → On the way → Arrived → In progress → Awaiting customer approval → Completed / Cancelled.
+Vite + React 19 + TypeScript + Tailwind v4 · Express + better-sqlite3 · EN/AR RTL

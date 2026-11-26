@@ -39,6 +39,8 @@ export function TechJobDetail() {
   const [report, setReport] = useState(booking?.jobReport ?? '')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const [quoteLabel, setQuoteLabel] = useState('')
+  const [quoteAmount, setQuoteAmount] = useState('')
 
   const mapUrl = useMemo(() => {
     if (!booking?.address.lat) return null
@@ -119,6 +121,62 @@ export function TechJobDetail() {
           {mapUrl && <img src={mapUrl} alt="" className="mt-4 w-full rounded-xl" />}
         </div>
       )}
+
+      {(booking.techResponse === 'pending' || !booking.techResponse) &&
+        booking.status === 'technician_assigned' && (
+          <div className="card-surface border-teal-200 bg-teal-50/40 p-5">
+            <h2 className="mb-3 font-semibold text-navy-900">{t('assignedJobs')}</h2>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true)
+                  await actions.techRespond(booking.id, true)
+                  setBusy(false)
+                }}
+              >
+                {t('acceptJob')}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true)
+                  await actions.techRespond(booking.id, false)
+                  setBusy(false)
+                }}
+              >
+                {t('declineJob')}
+              </button>
+            </div>
+          </div>
+        )}
+
+      <div className="card-surface p-5">
+        <h2 className="mb-2 font-semibold text-navy-900">{t('gpsSharing')}</h2>
+        <p className="mb-3 text-xs text-navy-700/55">{t('gpsDisclosure')}</p>
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={busy || ['completed', 'cancelled', 'new_request'].includes(booking.status)}
+          onClick={async () => {
+            setBusy(true)
+            const next = !booking.process?.gpsSharingActive
+            await actions.setGpsSharing(
+              booking.id,
+              next,
+              booking.address.lat,
+              booking.address.lng,
+            )
+            setBusy(false)
+          }}
+        >
+          {booking.process?.gpsSharingActive ? t('gpsOn') : t('gpsOff')}
+        </button>
+      </div>
 
       <div className="card-surface p-5">
         <h2 className="mb-2 font-semibold text-navy-900">{t('description')}</h2>
@@ -262,6 +320,48 @@ export function TechJobDetail() {
         </div>
         <button type="button" className="btn-secondary mt-3" onClick={() => void addCost()}>
           {t('addCost')}
+        </button>
+      </div>
+
+      <div className="card-surface p-5">
+        <h2 className="mb-3 font-semibold text-navy-900">{t('submitQuote')}</h2>
+        <p className="mb-3 text-xs text-navy-700/55">{t('pendingCompanyQuote')}</p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <input
+            className="input-field sm:col-span-2"
+            placeholder={t('label')}
+            value={quoteLabel}
+            onChange={(e) => setQuoteLabel(e.target.value)}
+          />
+          <input
+            className="input-field"
+            type="number"
+            placeholder={t('amount')}
+            value={quoteAmount}
+            onChange={(e) => setQuoteAmount(e.target.value)}
+          />
+        </div>
+        <button
+          type="button"
+          className="btn-primary mt-3"
+          disabled={!quoteLabel || !quoteAmount || busy}
+          onClick={async () => {
+            setBusy(true)
+            await actions.createQuotation(booking.id, [
+              {
+                id: `ql-${Date.now()}`,
+                label: quoteLabel,
+                amountSar: Number(quoteAmount),
+                type: 'materials',
+              },
+              ...booking.costs,
+            ])
+            setQuoteLabel('')
+            setQuoteAmount('')
+            setBusy(false)
+          }}
+        >
+          {t('sendQuotation')}
         </button>
       </div>
 

@@ -96,6 +96,7 @@ export const api = {
     preferredDate: string
     preferredTimeSlot: string
     discountCode?: string
+    preferredOrganizationId?: string
   }) =>
     request<{ booking: Booking }>('/bookings', {
       method: 'POST',
@@ -176,6 +177,39 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ bookingId, lines }),
     }),
+
+  reviewQuotation: (quotationId: string, decision: 'approve' | 'reject' | 'clarify', note?: string) =>
+    request<{ quotation: Quotation }>(`/quotations/${quotationId}/company-review`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, note }),
+    }),
+
+  respondQuotation: (quotationId: string, approve: boolean) =>
+    request<{ quotation: Quotation }>(`/quotations/${quotationId}/customer-respond`, {
+      method: 'POST',
+      body: JSON.stringify({ approve }),
+    }),
+
+  respondLeadOffer: (offerId: string, accept: boolean) =>
+    request<{ offer: unknown; booking: Booking }>(`/lead-offers/${offerId}/respond`, {
+      method: 'POST',
+      body: JSON.stringify({ accept }),
+    }),
+
+  techRespond: (bookingId: string, accept: boolean) =>
+    request<{ booking: Booking }>(`/bookings/${bookingId}/tech-respond`, {
+      method: 'POST',
+      body: JSON.stringify({ accept }),
+    }),
+
+  setGpsSharing: (bookingId: string, active: boolean, lat?: number, lng?: number) =>
+    request<{ booking: Booking }>(`/bookings/${bookingId}/gps`, {
+      method: 'POST',
+      body: JSON.stringify({ active, lat, lng }),
+    }),
+
+  listPartners: () =>
+    request<{ partners: unknown[]; launchRegion: string }>('/partners'),
 
   upsertDiscount: (code: DiscountCode) =>
     request<{ discount: DiscountCode }>('/discounts', {

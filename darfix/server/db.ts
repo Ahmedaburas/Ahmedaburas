@@ -14,7 +14,7 @@ db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
 
 /** Bump when seed shape changes so existing DBs reseed on next start. */
-export const SEED_VERSION = 'jubail-providers-1'
+export const SEED_VERSION = 'ep-b2b-growth-os-1'
 
 function hasColumn(table: string, column: string) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
@@ -167,6 +167,17 @@ export function migrate() {
       created_at TEXT NOT NULL,
       UNIQUE(organization_id, user_id)
     );
+
+    CREATE TABLE IF NOT EXISTS lead_offers (
+      id TEXT PRIMARY KEY,
+      booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+      organization_id TEXT NOT NULL REFERENCES provider_organizations(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'offered',
+      offer_round INTEGER NOT NULL DEFAULT 1,
+      offered_at TEXT NOT NULL,
+      deadline_at TEXT NOT NULL,
+      responded_at TEXT
+    );
   `)
 
   if (!hasColumn('users', 'employment_type')) {
@@ -180,6 +191,27 @@ export function migrate() {
   }
   if (!hasColumn('bookings', 'assignment_mode')) {
     db.exec(`ALTER TABLE bookings ADD COLUMN assignment_mode TEXT`)
+  }
+  if (!hasColumn('bookings', 'tech_response')) {
+    db.exec(`ALTER TABLE bookings ADD COLUMN tech_response TEXT`)
+  }
+  if (!hasColumn('bookings', 'preferred_organization_id')) {
+    db.exec(`ALTER TABLE bookings ADD COLUMN preferred_organization_id TEXT`)
+  }
+  if (!hasColumn('provider_organizations', 'subscription_plan')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN subscription_plan TEXT DEFAULT 'launch'`)
+  }
+  if (!hasColumn('provider_organizations', 'founding_partner')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN founding_partner INTEGER DEFAULT 0`)
+  }
+  if (!hasColumn('provider_organizations', 'service_city_ids')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN service_city_ids TEXT`)
+  }
+  if (!hasColumn('quotations', 'submitted_by')) {
+    db.exec(`ALTER TABLE quotations ADD COLUMN submitted_by TEXT`)
+  }
+  if (!hasColumn('quotations', 'company_note')) {
+    db.exec(`ALTER TABLE quotations ADD COLUMN company_note TEXT`)
   }
 }
 

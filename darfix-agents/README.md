@@ -1,49 +1,60 @@
-# DARFIX Agents — how they communicate
+# DARFIX Agents — AI Control Tower / Field Ops
 
-Multi-agent crew that operates the DARFIX home-maintenance API. **One shared backend**; role-scoped tools; sensitive actions need Shift Lead approval.
+Multi-agent **AI Control Tower** that serves **partner maintenance companies** on the DARFIX Growth OS (not DARFIX-as-operator). One shared backend; role-scoped tools; sensitive actions need human approval via Field Ops lead.
+
+## Framing
+
+| Legacy name | Control Tower role | Serves |
+| --- | --- | --- |
+| Shift Lead | **Field Ops lead** | Partner company ops — approvals, escalations, policy |
+| Dispatcher | **Dispatch** | Limited lead → confirm → assign named tech or company pool |
+| Field Coach | **Tech workflow assist** | Progress, checklist, notes after named tech is on the job |
+| Customer Support | **Customer updates** | Status / ETA commitments (approval-gated) |
+| Ops Analyst | **BI** | Partner KPI briefings, fill-rate, SLA mix |
+
+Approval gates stay: **cancel, reassign, price/quote disputes, customer commitments** need Field Ops (Shift Lead) approval. Auto reminds/alerts are recommendations — humans decide.
 
 ## Communication
 
-Pipeline is **sequential**, then specialists **report back** to Shift Lead:
+Pipeline is **sequential**, then specialists **report back** to Field Ops lead:
 
 ```mermaid
 flowchart TD
-    A[Incoming Service Request] --> B[Shift Lead]
-    B --> C[Dispatcher]
-    C --> D[Confirm Request]
-    D --> E[Assign Technician]
-    E --> F[Field Coach]
-    F --> G[Track Progress]
-    G --> H[Customer Support]
-    H --> I[Customer Status and ETA]
-    G --> J[Operations Analyst]
-    J --> K[Daily KPI and Briefing]
+    A[Marketplace request / limited lead offer] --> B[Field Ops Lead]
+    B --> C[Dispatch]
+    C --> D[Confirm / partner accept]
+    D --> E[Assign named tech OR company pool]
+    E --> F[Tech workflow assist]
+    F --> G[Track progress + GPS on active jobs]
+    G --> H[Customer updates]
+    H --> I[Customer status and ETA]
+    G --> J[BI / Ops Analyst]
+    J --> K[Partner KPI and briefing]
     C --> B
     F --> B
     H --> B
     J --> B
 ```
 
-1. Request hits **Shift Lead**.
-2. Lead hands off to **Dispatcher** → confirm → assign **independent technician** (named) **or** **maintenance company pool** (org then names a tech).
-3. **Field Coach** tracks progress after a named technician is on the job.
-4. From progress, **Customer Support** covers status/ETA and **Ops Analyst** updates KPIs.
-5. Dispatcher, Field Coach, Support, and Ops Analyst all report results back to Shift Lead.
+1. Request hits **Field Ops lead** (Shift Lead).
+2. Hand-off to **Dispatch** → confirm → assign independent **or** partner company pool (org then names a tech). Leads are **exclusive or limited (1–3)** with deadlines — not blast-to-all.
+3. **Tech workflow assist** (Field Coach) tracks progress after a named technician accepts.
+4. **Customer updates** + **BI** report results back to Field Ops lead.
 
-All agents connect to the **same DARFIX API** — no separate operational stores.
+All agents connect to the **same DARFIX API** — partner SaaS + demand marketplace.
 
 ## API tool access
 
 | Agent | Directory | API permissions |
 | --- | --- | --- |
-| Shift Lead | `shift-lead/` | Health, queue/overview (read), list/decide approvals, peer coordination |
-| Dispatcher | `dispatcher/` | Queue, confirm, first-time assign; propose reassign |
-| Customer Support | `customer-support/` | Customer status / ETA; propose customer commitments |
-| Field Coach | `field-coach/` | My jobs, field updates, notes, checklists |
-| Ops Analyst | `ops-analyst/` | Queue, overview, KPI (read-only) |
+| Field Ops lead (Shift Lead) | `shift-lead/` | Health, queue/overview (read), list/decide approvals, peer coordination |
+| Dispatch | `dispatcher/` | Queue, confirm, first-time assign; propose reassign |
+| Customer updates | `customer-support/` | Customer status / ETA; propose customer commitments |
+| Tech workflow assist | `field-coach/` | My jobs, field updates, notes, checklists |
+| BI | `ops-analyst/` | Queue, overview, KPI (read-only) |
 
 **Autonomous:** confirm, first assign, field progress, read status.  
-**Needs Shift Lead approval:** cancel, reassign, customer commitments.
+**Needs Field Ops approval:** cancel, reassign, customer commitments (price/quote/dispute similarly gated in product UI).
 
 ## Run
 

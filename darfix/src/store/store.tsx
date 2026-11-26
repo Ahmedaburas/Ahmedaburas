@@ -35,6 +35,7 @@ const emptyState = (locale: 'en' | 'ar' = 'en'): AppState => ({
   pricingOverrides: [],
   organizations: [],
   organizationMembers: [],
+  leadOffers: [],
   sessionUserId: null,
   locale,
 })
@@ -79,6 +80,7 @@ interface StoreActions {
     preferredDate: string
     preferredTimeSlot: string
     discountCode?: string
+    preferredOrganizationId?: string
   }) => Promise<Booking>
   updateBookingStatus: (bookingId: string, status: BookingStatus, note?: string) => Promise<void>
   assignTechnician: (
@@ -95,6 +97,15 @@ interface StoreActions {
   cancelBooking: (bookingId: string) => Promise<void>
   addProcessNote: (bookingId: string, text: string) => Promise<void>
   toggleChecklist: (bookingId: string, itemId: string, done: boolean) => Promise<void>
+  respondLeadOffer: (offerId: string, accept: boolean) => Promise<void>
+  reviewQuotation: (
+    quotationId: string,
+    decision: 'approve' | 'reject' | 'clarify',
+    note?: string,
+  ) => Promise<void>
+  respondQuotation: (quotationId: string, approve: boolean) => Promise<void>
+  techRespond: (bookingId: string, accept: boolean) => Promise<void>
+  setGpsSharing: (bookingId: string, active: boolean, lat?: number, lng?: number) => Promise<void>
 
   markNotificationRead: (id: string) => Promise<void>
   markAllNotificationsRead: (userId: string) => Promise<void>
@@ -294,6 +305,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       preferredDate: string
       preferredTimeSlot: string
       discountCode?: string
+      preferredOrganizationId?: string
     }) => {
       const { booking } = await api.createBooking(input)
       await refresh()
@@ -414,6 +426,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return quotation
     }
 
+    const respondLeadOffer = async (offerId: string, accept: boolean) => {
+      await api.respondLeadOffer(offerId, accept)
+      await refresh()
+    }
+
+    const reviewQuotation = async (
+      quotationId: string,
+      decision: 'approve' | 'reject' | 'clarify',
+      note?: string,
+    ) => {
+      await api.reviewQuotation(quotationId, decision, note)
+      await refresh()
+    }
+
+    const respondQuotation = async (quotationId: string, approve: boolean) => {
+      await api.respondQuotation(quotationId, approve)
+      await refresh()
+    }
+
+    const techRespond = async (bookingId: string, accept: boolean) => {
+      const { booking } = await api.techRespond(bookingId, accept)
+      setState((s) => ({ ...s, bookings: upsertBooking(s.bookings, booking) }))
+      await refresh()
+    }
+
+    const setGpsSharing = async (
+      bookingId: string,
+      active: boolean,
+      lat?: number,
+      lng?: number,
+    ) => {
+      const { booking } = await api.setGpsSharing(bookingId, active, lat, lng)
+      setState((s) => ({ ...s, bookings: upsertBooking(s.bookings, booking) }))
+    }
+
     const payInvoice = async (invoiceId: string) => {
       const { invoice } = await api.payInvoice(invoiceId)
       await refresh()
@@ -440,6 +487,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cancelBooking,
       addProcessNote,
       toggleChecklist,
+      respondLeadOffer,
+      reviewQuotation,
+      respondQuotation,
+      techRespond,
+      setGpsSharing,
       markNotificationRead,
       markAllNotificationsRead,
       upsertDiscount,

@@ -25,17 +25,28 @@ export function mapUser(row: Row, includePassword = false) {
 }
 
 export function mapOrganization(row: Row) {
+  let serviceCityIds: string[] | undefined
+  if (row.service_city_ids) {
+    try {
+      serviceCityIds = JSON.parse(row.service_city_ids as string) as string[]
+    } catch {
+      serviceCityIds = undefined
+    }
+  }
   return {
     id: row.id as string,
     kind: row.kind as string,
     name: row.name as string,
     nameAr: row.name_ar as string,
     cityId: row.city_id as string,
+    serviceCityIds,
     phone: (row.phone as string) || undefined,
     email: (row.email as string) || undefined,
     commercialRegistration: (row.commercial_registration as string) || undefined,
     licenseNumber: (row.license_number as string) || undefined,
     status: row.status as string,
+    subscriptionPlan: ((row.subscription_plan as string) || 'launch') as string,
+    foundingPartner: Boolean(row.founding_partner),
     createdAt: row.created_at as string,
   }
 }
@@ -48,6 +59,19 @@ export function mapOrgMember(row: Row) {
     memberRole: row.member_role as string,
     active: Boolean(row.active),
     createdAt: row.created_at as string,
+  }
+}
+
+export function mapLeadOffer(row: Row) {
+  return {
+    id: row.id as string,
+    bookingId: row.booking_id as string,
+    organizationId: row.organization_id as string,
+    status: row.status as string,
+    offerRound: row.offer_round as number,
+    offeredAt: row.offered_at as string,
+    deadlineAt: row.deadline_at as string,
+    respondedAt: (row.responded_at as string) || undefined,
   }
 }
 
@@ -64,6 +88,8 @@ export function mapBooking(row: Row) {
     technicianId: (row.technician_id as string) || undefined,
     organizationId: (row.organization_id as string) || undefined,
     assignmentMode: (row.assignment_mode as string) || undefined,
+    techResponse: (row.tech_response as string) || undefined,
+    preferredOrganizationId: (row.preferred_organization_id as string) || undefined,
     categoryId: row.category_id as string,
     problemId: row.problem_id as string,
     description: row.description as string,
@@ -124,6 +150,8 @@ export function mapQuotation(row: Row) {
     totalSar: row.total_sar as number,
     status: row.status as string,
     createdAt: row.created_at as string,
+    submittedBy: (row.submitted_by as string) || undefined,
+    companyNote: (row.company_note as string) || undefined,
   }
 }
 

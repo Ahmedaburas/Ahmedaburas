@@ -13,13 +13,14 @@ const steps = [
   'selectProblem',
   'describeProblem',
   'enterLocation',
+  'choosePartner',
   'selectDateTime',
   'reviewSubmit',
 ] as const
 
 export function BookService() {
-  const { t, locale, formatSar, categoryLabel, problemLabel } = useI18n()
-  const { actions, currentUser } = useStore()
+  const { t, locale, formatSar, categoryLabel, problemLabel, displayName } = useI18n()
+  const { actions, currentUser, state } = useStore()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   const [categoryId, setCategoryId] = useState<ServiceCategoryId | null>(null)
@@ -38,6 +39,14 @@ export function BookService() {
   const [preferredTimeSlot, setPreferredTimeSlot] = useState('10-12')
   const [discountCode, setDiscountCode] = useState('')
   const [appliedDiscount, setAppliedDiscount] = useState(0)
+  const [preferredOrganizationId, setPreferredOrganizationId] = useState<string | 'auto'>('auto')
+
+  const partners = state.organizations.filter(
+    (o) =>
+      o.status === 'active' &&
+      (o.kind === 'company' || o.kind === 'independent') &&
+      (o.serviceCityIds?.includes(cityId) || o.cityId === cityId || !o.serviceCityIds?.length),
+  )
 
   const category = SERVICE_CATEGORIES.find((c) => c.id === categoryId)
   const districts = useMemo(
@@ -53,7 +62,8 @@ export function BookService() {
     if (step === 1) return !!problemId
     if (step === 2) return description.trim().length >= 10
     if (step === 3) return street.trim().length >= 3
-    if (step === 4) return !!preferredDate && !!preferredTimeSlot
+    if (step === 4) return !!preferredOrganizationId
+    if (step === 5) return !!preferredDate && !!preferredTimeSlot
     return true
   }
 
@@ -102,6 +112,8 @@ export function BookService() {
       preferredDate,
       preferredTimeSlot,
       discountCode: discountCode || undefined,
+      preferredOrganizationId:
+        preferredOrganizationId === 'auto' ? undefined : preferredOrganizationId,
     })
     navigate(`/app/bookings/${booking.id}`)
   }
@@ -281,6 +293,46 @@ export function BookService() {
 
         {step === 4 && (
           <div className="space-y-4">
+            <p className="text-sm text-navy-700/65">{t('limitedCompetition')}</p>
+            <button
+              type="button"
+              onClick={() => setPreferredOrganizationId('auto')}
+              className={`w-full rounded-xl border px-4 py-3 text-start transition ${
+                preferredOrganizationId === 'auto'
+                  ? 'border-teal-500 bg-teal-50/50'
+                  : 'border-navy-100 hover:border-teal-300'
+              }`}
+            >
+              <p className="font-semibold text-navy-900">{t('matchAuto')}</p>
+              <p className="mt-1 text-xs text-navy-700/55">{t('seePartners')}</p>
+            </button>
+            <div className="grid gap-2">
+              {partners.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setPreferredOrganizationId(p.id)}
+                  className={`rounded-xl border px-4 py-3 text-start transition ${
+                    preferredOrganizationId === p.id
+                      ? 'border-teal-500 bg-teal-50/50'
+                      : 'border-navy-100 hover:border-teal-300'
+                  }`}
+                >
+                  <p className="font-semibold text-navy-900">
+                    {displayName(p.name, p.nameAr)}
+                  </p>
+                  <p className="mt-1 text-xs text-navy-700/55">
+                    {p.kind === 'company' ? t('maintenanceCompany') : t('independentTech')}
+                    {p.foundingPartner ? ` · ${t('foundingPartners')}` : ''}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === 5 && (
+          <div className="space-y-4">
             <div>
               <label className="label-text">{t('date')}</label>
               <input
@@ -317,12 +369,23 @@ export function BookService() {
           </div>
         )}
 
-        {step === 5 && categoryId && problemId && (
+        {step === 6 && categoryId && problemId && (
           <div className="space-y-4">
             <dl className="space-y-3 text-sm">
               <Row label={t('category')} value={categoryLabel(categoryId)} />
               <Row label={t('problem')} value={problemLabel(categoryId, problemId)} />
               <Row label={t('description')} value={description} />
+              <Row
+                label={t('partnerCompany')}
+                value={
+                  preferredOrganizationId === 'auto'
+                    ? t('matchAuto')
+                    : displayName(
+                        partners.find((p) => p.id === preferredOrganizationId)?.name ?? '',
+                        partners.find((p) => p.id === preferredOrganizationId)?.nameAr ?? '',
+                      )
+                }
+              />
               <Row label={t('date')} value={preferredDate} />
               <Row
                 label={t('address')}

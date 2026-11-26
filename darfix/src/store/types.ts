@@ -7,17 +7,42 @@ export type EmploymentType = 'independent' | 'company'
 export type AssignmentMode = 'named_tech' | 'company_pool'
 export type OrgMemberRole = 'owner' | 'dispatcher' | 'technician'
 
+/** Proposed partner subscription ladder (SAR/mo) — not validated pricing. */
+export type SubscriptionPlan = 'launch' | 'growth' | 'pro' | 'business' | 'enterprise'
+
+export type LeadOfferStatus =
+  | 'offered'
+  | 'accepted'
+  | 'rejected'
+  | 'expired'
+  | 'expanded'
+
+export type TechResponse = 'pending' | 'accepted' | 'rejected'
+
+export type QuotationStatus =
+  | 'draft'
+  | 'pending_company_approval'
+  | 'company_rejected'
+  | 'clarification_requested'
+  | 'sent'
+  | 'accepted'
+  | 'rejected'
+
 export interface ProviderOrganization {
   id: string
   kind: ProviderKind
   name: string
   nameAr: string
   cityId: string
+  /** Cities this partner serves (EP launch corridor). */
+  serviceCityIds?: string[]
   phone?: string
   email?: string
   commercialRegistration?: string
   licenseNumber?: string
   status: 'active' | 'pending_review' | 'suspended'
+  subscriptionPlan?: SubscriptionPlan
+  foundingPartner?: boolean
   createdAt: string
 }
 
@@ -28,6 +53,18 @@ export interface OrganizationMember {
   memberRole: OrgMemberRole
   active: boolean
   createdAt: string
+}
+
+/** Exclusive / limited (1–3) lead offer to a partner org with response deadline. */
+export interface LeadOffer {
+  id: string
+  bookingId: string
+  organizationId: string
+  status: LeadOfferStatus
+  offerRound: number
+  offeredAt: string
+  deadlineAt: string
+  respondedAt?: string
 }
 
 export type BookingStatus =
@@ -48,6 +85,7 @@ export type NotificationType =
   | 'job_completed'
   | 'extra_work'
   | 'quotation'
+  | 'lead_offer'
   | 'general'
 
 export interface User {
@@ -108,8 +146,10 @@ export interface Quotation {
   bookingId: string
   lines: CostLine[]
   totalSar: number
-  status: 'draft' | 'sent' | 'accepted' | 'rejected'
+  status: QuotationStatus
   createdAt: string
+  submittedBy?: string
+  companyNote?: string
 }
 
 export interface Invoice {
@@ -142,6 +182,10 @@ export interface BookingProcess {
   startedAt?: string
   completedAt?: string
   currentStepNote?: string
+  /** GPS / location share disclosed while job is active (stub or live). */
+  gpsSharingActive?: boolean
+  lastKnownLat?: number
+  lastKnownLng?: number
   technicianNotes: ProcessNote[]
   workChecklist: ChecklistItem[]
 }
@@ -153,6 +197,9 @@ export interface Booking {
   /** Provider org handling the job (company pool or independent tech's org). */
   organizationId?: string
   assignmentMode?: AssignmentMode
+  /** Technician accept/reject of named assignment. */
+  techResponse?: TechResponse
+  preferredOrganizationId?: string
   categoryId: ServiceCategoryId
   problemId: string
   description: string
@@ -215,9 +262,60 @@ export interface AppState {
   pricingOverrides: PricingOverride[]
   organizations: ProviderOrganization[]
   organizationMembers: OrganizationMember[]
+  leadOffers: LeadOffer[]
   sessionUserId: string | null
   locale: 'en' | 'ar'
 }
+
+export const SUBSCRIPTION_PLANS: {
+  id: SubscriptionPlan
+  priceSar: number | null
+  priceLabelEn: string
+  priceLabelAr: string
+  nameEn: string
+  nameAr: string
+}[] = [
+  {
+    id: 'launch',
+    priceSar: 0,
+    priceLabelEn: 'Free',
+    priceLabelAr: 'مجاني',
+    nameEn: 'Launch',
+    nameAr: 'إطلاق',
+  },
+  {
+    id: 'growth',
+    priceSar: 149,
+    priceLabelEn: '149 SAR/mo',
+    priceLabelAr: '١٤٩ ر.س/شهر',
+    nameEn: 'Growth',
+    nameAr: 'نمو',
+  },
+  {
+    id: 'pro',
+    priceSar: 399,
+    priceLabelEn: '399 SAR/mo',
+    priceLabelAr: '٣٩٩ ر.س/شهر',
+    nameEn: 'Pro',
+    nameAr: 'احترافي',
+  },
+  {
+    id: 'business',
+    priceSar: 799,
+    priceLabelEn: '799 SAR/mo',
+    priceLabelAr: '٧٩٩ ر.س/شهر',
+    nameEn: 'Business',
+    nameAr: 'أعمال',
+  },
+  {
+    id: 'enterprise',
+    priceSar: null,
+    priceLabelEn: '1,500–3,500+ SAR/mo',
+    priceLabelAr: '١٬٥٠٠–٣٬٥٠٠+ ر.س/شهر',
+    nameEn: 'Enterprise',
+    nameAr: 'مؤسسات',
+  },
+]
 
 export const TIME_SLOTS = [
   { id: '08-10', labelEn: '8:00 – 10:00 AM', labelAr: '٨:٠٠ – ١٠:٠٠ ص' },

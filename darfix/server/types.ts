@@ -35,6 +35,10 @@ export interface BookingProcess {
   startedAt?: string
   completedAt?: string
   currentStepNote?: string
+  /** GPS / location share while job is active (stub or live). */
+  gpsSharingActive?: boolean
+  lastKnownLat?: number
+  lastKnownLng?: number
   technicianNotes: ProcessNote[]
   workChecklist: ChecklistItem[]
 }

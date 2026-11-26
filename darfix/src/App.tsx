@@ -4,6 +4,7 @@ import { I18nProvider } from './i18n'
 import { StoreProvider, useStore } from './store/store'
 import { Landing } from './pages/Landing'
 import { Login } from './pages/Login'
+import { Partners } from './pages/Partners'
 import { Signup } from './pages/Signup'
 import { ProviderSignup } from './pages/ProviderSignup'
 import { NotificationsPage } from './pages/Notifications'
@@ -45,6 +46,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Landing />} />
+            <Route path="/partners" element={<Partners />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/signup/provider" element={<ProviderSignup />} />

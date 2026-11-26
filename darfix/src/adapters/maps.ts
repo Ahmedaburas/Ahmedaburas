@@ -14,16 +14,17 @@ export interface MapsService {
   staticMapUrl(point: GeoPoint, zoom?: number): string
 }
 
-/** Rough centroids for demo cities — Jubail is the launch default */
+/** Rough centroids — Eastern Province launch corridor default = Khobar */
 const CITY_CENTROIDS: Record<string, GeoPoint> = {
-  jubail: { lat: 27.0174, lng: 49.6583, label: 'Jubail' },
-  dammam: { lat: 26.4207, lng: 50.0888, label: 'Dammam' },
   khobar: { lat: 26.2172, lng: 50.1971, label: 'Al Khobar' },
+  dhahran: { lat: 26.2361, lng: 50.0393, label: 'Dhahran' },
+  dammam: { lat: 26.4207, lng: 50.0888, label: 'Dammam' },
+  jubail: { lat: 27.0174, lng: 49.6583, label: 'Jubail' },
   riyadh: { lat: 24.7136, lng: 46.6753, label: 'Riyadh' },
   jeddah: { lat: 21.4858, lng: 39.1925, label: 'Jeddah' },
 }
 
-const DEFAULT_CENTROID = CITY_CENTROIDS.jubail
+const DEFAULT_CENTROID = CITY_CENTROIDS.khobar
 
 export class MockMapsService implements MapsService {
   async geocode(address: string): Promise<GeoPoint> {

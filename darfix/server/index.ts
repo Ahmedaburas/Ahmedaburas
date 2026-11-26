@@ -7,6 +7,7 @@ import {
   mapBooking,
   mapDiscount,
   mapInvoice,
+  mapLeadOffer,
   mapNotification,
   mapOrganization,
   mapOrgMember,
@@ -186,9 +187,42 @@ function loadBootstrap(userId: string, role: string, locale: 'en' | 'ar') {
     visibleOrgs = organizations.filter((o) => o.id === orgId)
     visibleMembers = organizationMembers.filter((m) => m.organizationId === orgId)
   } else if (role === 'customer') {
-    const orgIds = new Set(bookings.map((b) => b.organizationId).filter(Boolean) as string[])
-    visibleOrgs = organizations.filter((o) => orgIds.has(o.id))
-    visibleMembers = organizationMembers.filter((m) => orgIds.has(m.organizationId))
+    // Customers see active partners for match/choose UX + orgs on their bookings
+    const linked = new Set(bookings.map((b) => b.organizationId).filter(Boolean) as string[])
+    visibleOrgs = organizations.filter(
+      (o) => o.status === 'active' || linked.has(o.id),
+    )
+    visibleMembers = organizationMembers.filter((m) =>
+      visibleOrgs.some((o) => o.id === m.organizationId),
+    )
+  }
+
+  let leadOffers = db
+    .prepare(`SELECT * FROM lead_offers ORDER BY offered_at DESC`)
+    .all()
+    .map((r) => mapLeadOffer(r as Record<string, unknown>))
+  if (role === 'provider') {
+    const orgId = userOrgId(userId)
+    leadOffers = leadOffers.filter((o) => o.organizationId === orgId)
+  } else if (role === 'customer') {
+    const ids = new Set(bookings.map((b) => b.id))
+    leadOffers = leadOffers.filter((o) => ids.has(o.bookingId))
+  } else if (role === 'technician') {
+    leadOffers = []
+  }
+
+  // Provider also sees bookings offered via open lead offers
+  if (role === 'provider') {
+    const orgId = userOrgId(userId)
+    const offerBookingIds = new Set(
+      leadOffers.filter((o) => o.status === 'offered' || o.status === 'accepted').map((o) => o.bookingId),
+    )
+    const extra = db
+      .prepare(`SELECT * FROM bookings ORDER BY created_at DESC`)
+      .all()
+      .map((b) => mapBooking(b as Record<string, unknown>))
+      .filter((b) => offerBookingIds.has(b.id) && !bookings.some((x) => x.id === b.id))
+    bookings = [...extra, ...bookings]
   }
 
   return {
@@ -201,9 +235,67 @@ function loadBootstrap(userId: string, role: string, locale: 'en' | 'ar') {
     pricingOverrides,
     organizations: visibleOrgs,
     organizationMembers: visibleMembers,
+    leadOffers,
     sessionUserId: userId,
     locale,
   }
+}
+
+function eligiblePartnerOrgs(cityId: string, preferredOrgId?: string) {
+  const rows = db
+    .prepare(
+      `SELECT * FROM provider_organizations WHERE status = 'active' AND kind = 'company' ORDER BY founding_partner DESC, name`,
+    )
+    .all() as Record<string, unknown>[]
+  const mapped = rows.map((r) => mapOrganization(r))
+  const byCity = mapped.filter((o) => {
+    const cities = o.serviceCityIds?.length ? o.serviceCityIds : [o.cityId]
+    return cities.includes(cityId)
+  })
+  const pool = byCity.length ? byCity : mapped
+  if (preferredOrgId) {
+    const pref = pool.find((o) => o.id === preferredOrgId)
+    if (pref) return [pref, ...pool.filter((o) => o.id !== preferredOrgId)].slice(0, 3)
+  }
+  // Limited competition: 1–3, prefer founding partners first
+  return pool.slice(0, Math.min(3, Math.max(1, pool.length)))
+}
+
+function distributeLeadOffers(
+  bookingId: string,
+  cityId: string,
+  preferredOrgId?: string,
+  round = 1,
+) {
+  const targets = eligiblePartnerOrgs(cityId, preferredOrgId)
+  const now = new Date()
+  const deadline = new Date(now.getTime() + 2 * 3600000)
+  const insert = db.prepare(`
+    INSERT INTO lead_offers (
+      id, booking_id, organization_id, status, offer_round, offered_at, deadline_at, responded_at
+    ) VALUES (?, ?, ?, 'offered', ?, ?, ?, NULL)
+  `)
+  for (const org of targets.slice(0, preferredOrgId ? 1 : Math.min(3, targets.length))) {
+    const offerId = uid('lo')
+    insert.run(offerId, bookingId, org.id, round, now.toISOString(), deadline.toISOString())
+    const owners = db
+      .prepare(
+        `SELECT user_id FROM organization_members WHERE organization_id = ? AND member_role IN ('owner','dispatcher') AND active = 1`,
+      )
+      .all(org.id) as { user_id: string }[]
+    for (const m of owners) {
+      notify({
+        userId: m.user_id,
+        type: 'lead_offer',
+        titleEn: 'New lead offer — respond soon',
+        titleAr: 'عرض عميل جديد — سارع بالرد',
+        bodyEn: `Limited lead ${bookingId}. Deadline ${deadline.toISOString()}.`,
+        bodyAr: `عرض محدود ${bookingId}. الموعد النهائي قريب.`,
+        bookingId,
+      })
+    }
+  }
+  return targets.length
 }
 
 app.get('/api/health', (_req, res) => {
@@ -250,8 +342,8 @@ app.post('/api/auth/signup', (req, res) => {
     email,
     phoneNorm,
     bcrypt.hashSync(password, 8),
-    cityId ?? 'jubail',
-    districtId ?? 'fanateer',
+    cityId ?? 'khobar',
+    districtId ?? 'thuqbah',
     new Date().toISOString(),
   )
   const token = createSession(id)
@@ -283,7 +375,7 @@ app.post('/api/auth/signup/provider', (req, res) => {
     email,
     phone,
     password,
-    cityId = 'jubail',
+    cityId = 'khobar',
     districtId,
     specialties = ['plumbing'],
     companyName,
@@ -313,8 +405,9 @@ app.post('/api/auth/signup/provider', (req, res) => {
     db.prepare(
       `INSERT INTO provider_organizations (
         id, kind, name, name_ar, city_id, phone, email,
-        commercial_registration, license_number, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?)`,
+        commercial_registration, license_number, status,
+        subscription_plan, founding_partner, service_city_ids, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', 'launch', 0, ?, ?)`,
     ).run(
       orgId,
       kind,
@@ -325,6 +418,7 @@ app.post('/api/auth/signup/provider', (req, res) => {
       email,
       commercialRegistration ?? null,
       licenseNumber ?? null,
+      JSON.stringify([cityId]),
       now,
     )
 
@@ -425,6 +519,7 @@ app.post('/api/bookings', auth, (req: Authed, res) => {
     preferredDate: string
     preferredTimeSlot: string
     discountCode?: string
+    preferredOrganizationId?: string
   }
   let fee = getEffectiveFee(body.categoryId, body.problemId)
   let discountAmount = 0
@@ -451,21 +546,23 @@ app.post('/api/bookings', auth, (req: Authed, res) => {
       ? [{ id: uid('cost'), label: `Discount (${usedCode})`, amountSar: -discountAmount, type: 'discount' }]
       : []),
   ]
+  const cityId = (body.address?.cityId as string) || 'khobar'
   const process: BookingProcess = {
     ...emptyProcess(),
     workChecklist: defaultChecklist(body.categoryId),
-    currentStepNote: 'Request received — waiting for confirmation',
+    currentStepNote: 'Request received — matching partner companies (limited offers)',
   }
 
   db.prepare(
     `INSERT INTO bookings (
-      id, customer_id, category_id, problem_id, description, photos, address,
+      id, customer_id, preferred_organization_id, category_id, problem_id, description, photos, address,
       preferred_date, preferred_time_slot, estimated_fee_sar, status, costs, extra_work,
       discount_code, discount_amount_sar, process, status_history, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new_request', ?, '[]', ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new_request', ?, '[]', ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     req.userId,
+    body.preferredOrganizationId ?? null,
     body.categoryId,
     body.problemId,
     body.description,
@@ -483,23 +580,25 @@ app.post('/api/bookings', auth, (req: Authed, res) => {
     now,
   )
 
+  distributeLeadOffers(id, cityId, body.preferredOrganizationId)
+
   notify({
     userId: req.userId!,
     type: 'booking_confirmed',
-    titleEn: 'Booking submitted',
-    titleAr: 'تم إرسال الحجز',
-    bodyEn: `Your ${body.categoryId} request ${id} was received.`,
-    bodyAr: `تم استلام طلبك ${id}.`,
+    titleEn: 'Request submitted to partner companies',
+    titleAr: 'تم إرسال الطلب لشركات شريكة',
+    bodyEn: `Your ${body.categoryId} request ${id} was matched to a limited set of partners.`,
+    bodyAr: `تم مطابقة طلبك ${id} مع مجموعة محدودة من الشركاء.`,
     bookingId: id,
   })
   for (const admin of db.prepare(`SELECT id FROM users WHERE role = 'admin'`).all() as { id: string }[]) {
     notify({
       userId: admin.id,
       type: 'general',
-      titleEn: 'New booking request',
-      titleAr: 'طلب حجز جديد',
-      bodyEn: `New ${body.categoryId} booking ${id}`,
-      bodyAr: `حجز جديد ${id}`,
+      titleEn: 'New marketplace request',
+      titleAr: 'طلب سوق جديد',
+      bodyEn: `New ${body.categoryId} booking ${id} — lead offers distributed`,
+      bodyAr: `حجز جديد ${id} — تم توزيع العروض`,
       bookingId: id,
     })
   }
@@ -656,7 +755,7 @@ app.post('/api/bookings/:id/assign', auth, (req: Authed, res) => {
     }
     resolvedOrgId = (tech.organization_id as string) || organizationId
     mode = 'named_tech'
-    stepNote = `Assigned to ${tech.name}`
+    stepNote = `Assigned to ${tech.name} — awaiting accept/reject`
   }
 
   if (organizationId && !technicianId) {
@@ -725,11 +824,12 @@ app.post('/api/bookings/:id/assign', auth, (req: Authed, res) => {
 
   db.prepare(
     `UPDATE bookings SET technician_id = ?, organization_id = ?, assignment_mode = ?,
-     status = ?, status_history = ?, process = ?, updated_at = ? WHERE id = ?`,
+     tech_response = ?, status = ?, status_history = ?, process = ?, updated_at = ? WHERE id = ?`,
   ).run(
     resolvedTechId,
     resolvedOrgId ?? null,
     mode,
+    resolvedTechId ? 'pending' : null,
     nextStatus,
     JSON.stringify(history),
     JSON.stringify(process),
@@ -1070,7 +1170,9 @@ app.post('/api/invoices/:id/pay', auth, async (req: Authed, res) => {
 })
 
 app.post('/api/quotations', auth, (req: Authed, res) => {
-  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  if (!['admin', 'technician', 'provider'].includes(req.userRole || '')) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
   const { bookingId, lines } = req.body as {
     bookingId: string
     lines: { id: string; label: string; amountSar: number; type: string }[]
@@ -1079,26 +1181,360 @@ app.post('/api/quotations', auth, (req: Authed, res) => {
     | Record<string, unknown>
     | undefined
   if (!booking) return res.status(404).json({ error: 'Booking not found' })
+  if (req.userRole === 'technician' && booking.technician_id !== req.userId) {
+    return res.status(403).json({ error: 'Not your job' })
+  }
+  if (req.userRole === 'provider') {
+    const orgId = userOrgId(req.userId!)
+    if (booking.organization_id !== orgId) return res.status(403).json({ error: 'Forbidden' })
+  }
+
   const id = uid('q')
   const total = lines.reduce((s, l) => s + l.amountSar, 0)
   const now = new Date().toISOString()
+  // Technician quotes need company price approval; admin/provider can send directly
+  const status =
+    req.userRole === 'technician' && booking.organization_id
+      ? 'pending_company_approval'
+      : 'sent'
   db.prepare(
-    `INSERT INTO quotations (id, booking_id, lines, total_sar, status, created_at) VALUES (?, ?, ?, ?, 'sent', ?)`,
-  ).run(id, bookingId, JSON.stringify(lines), total, now)
-  notify({
-    userId: booking.customer_id as string,
-    type: 'quotation',
-    titleEn: 'New quotation',
-    titleAr: 'عرض سعر جديد',
-    bodyEn: `Quotation for ${bookingId}: SAR ${total}`,
-    bodyAr: `عرض سعر للحجز ${bookingId}: ${total} ر.س`,
-    bookingId,
-  })
+    `INSERT INTO quotations (id, booking_id, lines, total_sar, status, created_at, submitted_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, bookingId, JSON.stringify(lines), total, status, now, req.userId)
+
+  if (status === 'pending_company_approval' && booking.organization_id) {
+    const owners = db
+      .prepare(
+        `SELECT user_id FROM organization_members WHERE organization_id = ? AND member_role IN ('owner','dispatcher') AND active = 1`,
+      )
+      .all(booking.organization_id as string) as { user_id: string }[]
+    for (const m of owners) {
+      notify({
+        userId: m.user_id,
+        type: 'quotation',
+        titleEn: 'Quote needs price approval',
+        titleAr: 'عرض سعر بانتظار موافقة التسعير',
+        bodyEn: `Technician submitted quote on ${bookingId}: SAR ${total}`,
+        bodyAr: `قدّم الفني عرض سعر على ${bookingId}: ${total} ر.س`,
+        bookingId,
+      })
+    }
+  } else {
+    notify({
+      userId: booking.customer_id as string,
+      type: 'quotation',
+      titleEn: 'New quotation',
+      titleAr: 'عرض سعر جديد',
+      bodyEn: `Quotation for ${bookingId}: SAR ${total}`,
+      bodyAr: `عرض سعر للحجز ${bookingId}: ${total} ر.س`,
+      bookingId,
+    })
+  }
   res.status(201).json({
     quotation: mapQuotation(
       db.prepare(`SELECT * FROM quotations WHERE id = ?`).get(id) as Record<string, unknown>,
     ),
   })
+})
+
+/** Company approver: approve / reject / clarify a technician quote before customer sees it. */
+app.post('/api/quotations/:id/company-review', auth, (req: Authed, res) => {
+  if (req.userRole !== 'provider' && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+  const { decision, note } = req.body as {
+    decision: 'approve' | 'reject' | 'clarify'
+    note?: string
+  }
+  const quote = db.prepare(`SELECT * FROM quotations WHERE id = ?`).get(req.params.id) as
+    | Record<string, unknown>
+    | undefined
+  if (!quote) return res.status(404).json({ error: 'Not found' })
+  if (quote.status !== 'pending_company_approval' && quote.status !== 'clarification_requested') {
+    return res.status(409).json({ error: 'Quote not awaiting company review' })
+  }
+  const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(quote.booking_id as string) as
+    | Record<string, unknown>
+    | undefined
+  if (!booking) return res.status(404).json({ error: 'Booking not found' })
+  if (req.userRole === 'provider') {
+    const orgId = userOrgId(req.userId!)
+    if (booking.organization_id !== orgId) return res.status(403).json({ error: 'Forbidden' })
+  }
+
+  const nextStatus =
+    decision === 'approve' ? 'sent' : decision === 'reject' ? 'company_rejected' : 'clarification_requested'
+  db.prepare(`UPDATE quotations SET status = ?, company_note = ? WHERE id = ?`).run(
+    nextStatus,
+    note ?? null,
+    req.params.id,
+  )
+
+  if (nextStatus === 'sent') {
+    notify({
+      userId: booking.customer_id as string,
+      type: 'quotation',
+      titleEn: 'Approved quotation ready',
+      titleAr: 'عرض سعر معتمد جاهز',
+      bodyEn: `Partner-approved quote for ${booking.id}: SAR ${quote.total_sar}`,
+      bodyAr: `عرض سعر معتمد للحجز ${booking.id}: ${quote.total_sar} ر.س`,
+      bookingId: booking.id as string,
+    })
+  } else if (booking.technician_id) {
+    notify({
+      userId: booking.technician_id as string,
+      type: 'quotation',
+      titleEn: decision === 'reject' ? 'Quote rejected by company' : 'Clarify quote',
+      titleAr: decision === 'reject' ? 'رفضت الشركة عرض السعر' : 'مطلوب توضيح عرض السعر',
+      bodyEn: note || `Company ${decision}d quote ${req.params.id}`,
+      bodyAr: note || `قرار الشركة بشأن العرض ${req.params.id}`,
+      bookingId: booking.id as string,
+    })
+  }
+
+  res.json({
+    quotation: mapQuotation(
+      db.prepare(`SELECT * FROM quotations WHERE id = ?`).get(req.params.id) as Record<string, unknown>,
+    ),
+  })
+})
+
+app.post('/api/quotations/:id/customer-respond', auth, (req: Authed, res) => {
+  if (req.userRole !== 'customer') return res.status(403).json({ error: 'Customers only' })
+  const { approve } = req.body as { approve: boolean }
+  const quote = db.prepare(`SELECT * FROM quotations WHERE id = ?`).get(req.params.id) as
+    | Record<string, unknown>
+    | undefined
+  if (!quote) return res.status(404).json({ error: 'Not found' })
+  if (quote.status !== 'sent') return res.status(409).json({ error: 'Quote not available' })
+  const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(quote.booking_id as string) as
+    | Record<string, unknown>
+    | undefined
+  if (!booking || booking.customer_id !== req.userId) return res.status(403).json({ error: 'Forbidden' })
+
+  const status = approve ? 'accepted' : 'rejected'
+  db.prepare(`UPDATE quotations SET status = ? WHERE id = ?`).run(status, req.params.id)
+  if (approve) {
+    const lines = JSON.parse(quote.lines as string) as {
+      id: string
+      label: string
+      amountSar: number
+      type: string
+    }[]
+    db.prepare(`UPDATE bookings SET costs = ?, updated_at = ? WHERE id = ?`).run(
+      JSON.stringify(lines),
+      new Date().toISOString(),
+      booking.id,
+    )
+  }
+  res.json({
+    quotation: mapQuotation(
+      db.prepare(`SELECT * FROM quotations WHERE id = ?`).get(req.params.id) as Record<string, unknown>,
+    ),
+  })
+})
+
+/** Provider accepts/rejects a limited lead offer. */
+app.post('/api/lead-offers/:id/respond', auth, (req: Authed, res) => {
+  if (req.userRole !== 'provider' && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+  const { accept } = req.body as { accept: boolean }
+  const offer = db.prepare(`SELECT * FROM lead_offers WHERE id = ?`).get(req.params.id) as
+    | Record<string, unknown>
+    | undefined
+  if (!offer) return res.status(404).json({ error: 'Not found' })
+  if (offer.status !== 'offered') return res.status(409).json({ error: 'Offer not open' })
+  if (req.userRole === 'provider' && offer.organization_id !== userOrgId(req.userId!)) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+
+  const now = new Date().toISOString()
+  if (new Date(offer.deadline_at as string).getTime() < Date.now()) {
+    db.prepare(`UPDATE lead_offers SET status = 'expired' WHERE id = ?`).run(req.params.id)
+    return res.status(409).json({ error: 'Offer expired' })
+  }
+
+  if (accept) {
+    db.prepare(
+      `UPDATE lead_offers SET status = 'accepted', responded_at = ? WHERE id = ?`,
+    ).run(now, req.params.id)
+    // Expire sibling open offers for this booking (exclusive win among limited set)
+    db.prepare(
+      `UPDATE lead_offers SET status = 'expired' WHERE booking_id = ? AND id != ? AND status = 'offered'`,
+    ).run(offer.booking_id, req.params.id)
+
+    const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(offer.booking_id as string) as
+      | Record<string, unknown>
+      | undefined
+    if (booking) {
+      const history = JSON.parse((booking.status_history as string) || '[]') as object[]
+      history.push({ status: 'confirmed', at: now, by: req.userId, note: 'Partner accepted lead' })
+      const process = {
+        ...emptyProcess(),
+        ...(JSON.parse((booking.process as string) || '{}') as BookingProcess),
+        currentStepNote: 'Partner company accepted lead — assign a technician',
+      }
+      db.prepare(
+        `UPDATE bookings SET organization_id = ?, assignment_mode = 'company_pool', status = 'confirmed',
+         status_history = ?, process = ?, updated_at = ? WHERE id = ?`,
+      ).run(
+        offer.organization_id,
+        JSON.stringify(history),
+        JSON.stringify(process),
+        now,
+        offer.booking_id,
+      )
+      notify({
+        userId: booking.customer_id as string,
+        type: 'booking_confirmed',
+        titleEn: 'Partner company matched',
+        titleAr: 'تم مطابقة شركة شريكة',
+        bodyEn: `A partner company accepted your request ${booking.id}.`,
+        bodyAr: `قبلت شركة شريكة طلبك ${booking.id}.`,
+        bookingId: booking.id as string,
+      })
+    }
+  } else {
+    db.prepare(
+      `UPDATE lead_offers SET status = 'rejected', responded_at = ? WHERE id = ?`,
+    ).run(now, req.params.id)
+
+    const openLeft = db
+      .prepare(
+        `SELECT COUNT(*) as c FROM lead_offers WHERE booking_id = ? AND status = 'offered'`,
+      )
+      .get(offer.booking_id) as { c: number }
+    if (openLeft.c === 0) {
+      // Expand to next eligible orgs not yet offered
+      const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(offer.booking_id as string) as
+        | Record<string, unknown>
+        | undefined
+      if (booking) {
+        const addr = JSON.parse(booking.address as string) as { cityId: string }
+        const already = new Set(
+          (
+            db
+              .prepare(`SELECT organization_id FROM lead_offers WHERE booking_id = ?`)
+              .all(offer.booking_id) as { organization_id: string }[]
+          ).map((r) => r.organization_id),
+        )
+        const round = ((offer.offer_round as number) || 1) + 1
+        const next = eligiblePartnerOrgs(addr.cityId).filter((o) => !already.has(o.id)).slice(0, 2)
+        if (next.length) {
+          const deadline = new Date(Date.now() + 2 * 3600000).toISOString()
+          for (const org of next) {
+            db.prepare(
+              `INSERT INTO lead_offers (id, booking_id, organization_id, status, offer_round, offered_at, deadline_at)
+               VALUES (?, ?, ?, 'offered', ?, ?, ?)`,
+            ).run(uid('lo'), offer.booking_id, org.id, round, now, deadline)
+            db.prepare(
+              `UPDATE lead_offers SET status = 'expanded' WHERE booking_id = ? AND status = 'rejected'`,
+            ).run(offer.booking_id)
+          }
+        }
+      }
+    }
+  }
+
+  res.json({
+    offer: mapLeadOffer(
+      db.prepare(`SELECT * FROM lead_offers WHERE id = ?`).get(req.params.id) as Record<string, unknown>,
+    ),
+    booking: mapBooking(
+      db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(offer.booking_id as string) as Record<
+        string,
+        unknown
+      >,
+    ),
+  })
+})
+
+/** Technician accept/reject named assignment. */
+app.post('/api/bookings/:id/tech-respond', auth, (req: Authed, res) => {
+  if (req.userRole !== 'technician') return res.status(403).json({ error: 'Technicians only' })
+  const { accept } = req.body as { accept: boolean }
+  const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
+    | Record<string, unknown>
+    | undefined
+  if (!booking) return res.status(404).json({ error: 'Not found' })
+  if (booking.technician_id !== req.userId) return res.status(403).json({ error: 'Not your job' })
+
+  const now = new Date().toISOString()
+  if (accept) {
+    db.prepare(
+      `UPDATE bookings SET tech_response = 'accepted', updated_at = ? WHERE id = ?`,
+    ).run(now, req.params.id)
+  } else {
+    const history = JSON.parse((booking.status_history as string) || '[]') as object[]
+    history.push({ status: booking.status, at: now, by: req.userId, note: 'Technician rejected assignment' })
+    db.prepare(
+      `UPDATE bookings SET technician_id = NULL, tech_response = 'rejected', assignment_mode = 'company_pool',
+       status = 'confirmed', status_history = ?, updated_at = ? WHERE id = ?`,
+    ).run(JSON.stringify(history), now, req.params.id)
+    if (booking.organization_id) {
+      const owners = db
+        .prepare(
+          `SELECT user_id FROM organization_members WHERE organization_id = ? AND member_role IN ('owner','dispatcher')`,
+        )
+        .all(booking.organization_id as string) as { user_id: string }[]
+      for (const m of owners) {
+        notify({
+          userId: m.user_id,
+          type: 'general',
+          titleEn: 'Technician declined job',
+          titleAr: 'رفض الفني المهمة',
+          bodyEn: `Job ${req.params.id} returned to company pool.`,
+          bodyAr: `عادت المهمة ${req.params.id} إلى مجموعة الشركة.`,
+          bookingId: req.params.id,
+        })
+      }
+    }
+  }
+  res.json({
+    booking: mapBooking(
+      db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as Record<string, unknown>,
+    ),
+  })
+})
+
+/** GPS disclosure stub during active jobs. */
+app.post('/api/bookings/:id/gps', auth, (req: Authed, res) => {
+  if (req.userRole !== 'technician') return res.status(403).json({ error: 'Technicians only' })
+  const { active, lat, lng } = req.body as { active: boolean; lat?: number; lng?: number }
+  const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
+    | Record<string, unknown>
+    | undefined
+  if (!booking || booking.technician_id !== req.userId) {
+    return res.status(404).json({ error: 'Not found' })
+  }
+  const process = {
+    ...emptyProcess(),
+    ...(JSON.parse((booking.process as string) || '{}') as BookingProcess),
+    gpsSharingActive: active,
+    lastKnownLat: lat,
+    lastKnownLng: lng,
+  }
+  db.prepare(`UPDATE bookings SET process = ?, updated_at = ? WHERE id = ?`).run(
+    JSON.stringify(process),
+    new Date().toISOString(),
+    req.params.id,
+  )
+  res.json({
+    booking: mapBooking(
+      db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as Record<string, unknown>,
+    ),
+  })
+})
+
+app.get('/api/partners', (_req, res) => {
+  const orgs = db
+    .prepare(
+      `SELECT * FROM provider_organizations WHERE status = 'active' ORDER BY founding_partner DESC, name`,
+    )
+    .all()
+    .map((o) => mapOrganization(o as Record<string, unknown>))
+  res.json({ partners: orgs, launchRegion: 'eastern-province' })
 })
 
 app.post('/api/discounts', auth, (req: Authed, res) => {

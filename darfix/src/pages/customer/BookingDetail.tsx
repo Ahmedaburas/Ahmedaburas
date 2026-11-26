@@ -24,7 +24,11 @@ export function CustomerBookingDetail() {
 
   const booking = state.bookings.find((b) => b.id === id)
   const tech = state.users.find((u) => u.id === booking?.technicianId)
+  const partner = state.organizations.find((o) => o.id === booking?.organizationId)
   const invoice = state.invoices.find((i) => i.bookingId === id)
+  const quotes = state.quotations.filter((q) => q.bookingId === id)
+  const customerQuotes = quotes.filter((q) => q.status === 'sent' || q.status === 'accepted' || q.status === 'rejected')
+  const openOffers = state.leadOffers.filter((o) => o.bookingId === id && o.status === 'offered')
   const [rating, setRating] = useState(5)
   const [review, setReview] = useState('')
   const [paying, setPaying] = useState(false)
@@ -68,6 +72,74 @@ export function CustomerBookingDetail() {
       </div>
 
       <ProcessTracker booking={booking} />
+
+      {partner && (
+        <div className="card-surface p-5">
+          <h2 className="mb-2 font-semibold text-navy-900">{t('partnerCompany')}</h2>
+          <p className="font-medium text-navy-900">{displayName(partner.name, partner.nameAr)}</p>
+          {partner.foundingPartner && (
+            <p className="mt-1 text-xs text-teal-700">{t('foundingPartners')}</p>
+          )}
+        </div>
+      )}
+
+      {!partner && openOffers.length > 0 && (
+        <div className="card-surface border-teal-200 bg-teal-50/30 p-5">
+          <h2 className="mb-2 font-semibold text-navy-900">{t('awaitingPartner')}</h2>
+          <p className="text-sm text-navy-700/70">{t('limitedCompetition')}</p>
+          <p className="mt-2 text-xs text-navy-700/50">
+            {openOffers.length} {t('providers').toLowerCase()}
+          </p>
+        </div>
+      )}
+
+      {customerQuotes.length > 0 && (
+        <div className="card-surface p-5">
+          <h2 className="mb-3 font-semibold text-navy-900">{t('quotation')}</h2>
+          {customerQuotes.map((q) => (
+            <div key={q.id} className="mb-3 rounded-xl border border-navy-100 p-4">
+              <p className="text-sm font-medium text-navy-900">
+                {formatSar(q.totalSar)} · {q.status === 'sent' ? t('quoteApproved') : q.status}
+              </p>
+              <ul className="mt-2 space-y-1 text-sm text-navy-700/70">
+                {q.lines.map((l) => (
+                  <li key={l.id}>
+                    {l.label}: {formatSar(l.amountSar)}
+                  </li>
+                ))}
+              </ul>
+              {q.status === 'sent' && (
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true)
+                      await actions.respondQuotation(q.id, true)
+                      setBusy(false)
+                    }}
+                  >
+                    {t('approve')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true)
+                      await actions.respondQuotation(q.id, false)
+                      setBusy(false)
+                    }}
+                  >
+                    {t('reject')}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {pendingExtra.length > 0 && (
         <div className="card-surface border-orange-200 bg-orange-50/40 p-5">

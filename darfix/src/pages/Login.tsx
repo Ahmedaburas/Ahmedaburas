@@ -8,7 +8,7 @@ import { DEMO_PASSWORD, useStore } from '../store/store'
 const demos = [
   { role: 'customer', email: 'customer@darfix.sa', labelKey: 'customer' },
   { role: 'technician', email: 'tech@darfix.sa', labelKey: 'independentTech' },
-  { role: 'provider', email: 'company@darfix.sa', labelKey: 'maintenanceCompany' },
+  { role: 'provider', email: 'company@darfix.sa', labelKey: 'foundingPartners' },
   { role: 'admin', email: 'admin@darfix.sa', labelKey: 'admin' },
 ] as const
 
