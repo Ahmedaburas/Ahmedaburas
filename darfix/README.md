@@ -40,6 +40,17 @@ npm run dev
 npm run build
 ```
 
+### Pilot / single-process production
+
+Build the SPA then serve API + static assets on one port (default `8787`, or `PORT`):
+
+```bash
+npm run start:pilot
+# or: npm run build && npm start
+```
+
+Open `http://127.0.0.1:8787` (frontend + `/api`). Dev mode still uses Vite proxy on `:5173` → API `:8787`.
+
 ## Demo accounts
 
 Password: `demo123`

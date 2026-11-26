@@ -9,6 +9,7 @@
     "dev:server": "tsx watch server/index.ts",
     "build": "tsc -b && vite build",
     "start": "tsx server/index.ts",
+    "start:pilot": "npm run build && tsx server/index.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },

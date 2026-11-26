@@ -2197,6 +2197,18 @@ app.post('/api/admin/backup', auth, (req: Authed, res) => {
   })
 })
 
+/** Production pilot: serve Vite `dist` from the same Node process as the API. */
+const distDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir, { index: false, maxAge: '1h' }))
+  app.get(/^(?!\/api(?:\/|$)).*/, (_req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'))
+  })
+  console.log(`Serving SPA from ${distDir}`)
+} else {
+  console.log(`No dist/ found at ${distDir} — API-only mode (run npm run build for combined pilot)`)
+}
+
 app.listen(PORT, () => {
-  console.log(`DARFIX API listening on http://127.0.0.1:${PORT}`)
+  console.log(`DARFIX listening on http://127.0.0.1:${PORT}`)
 })
