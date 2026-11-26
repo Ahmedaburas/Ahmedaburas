@@ -5,7 +5,16 @@ import { defaultChecklist, emptyProcess, type BookingProcess } from './types'
 
 /** Local-only full demo dataset. Never enable on pilot/production publish. */
 export function demoSeedEnabled() {
-  return process.env.DARFIX_SEED_DEMO === '1'
+  if (process.env.DARFIX_SEED_DEMO !== '1') return false
+  try {
+    const forced = db.prepare(`SELECT value FROM meta WHERE key = 'security_force_seed_off'`).get() as
+      | { value?: string }
+      | undefined
+    if (forced?.value === '1') return false
+  } catch {
+    /* table may not exist yet during first migrate */
+  }
+  return true
 }
 
 function resolveDemoPassword(): string | null {
@@ -32,6 +41,7 @@ function wipeAllData() {
     DELETE FROM discount_codes;
     DELETE FROM pricing_overrides;
     DELETE FROM agent_approvals;
+    DELETE FROM security_findings;
     DELETE FROM lead_offers;
     DELETE FROM organization_members;
     DELETE FROM bookings;

@@ -30,6 +30,9 @@ flowchart TD
     H --> I[Customer status and ETA]
     G --> J[BI / Ops Analyst]
     J --> K[Partner KPI and briefing]
+    B --> S[Security Guardian]
+    S --> T[Audit / notify / propose remediation]
+    T --> B
     C --> B
     F --> B
     H --> B
@@ -53,10 +56,13 @@ All agents connect to the **same DARFIX API** — partner SaaS + demand marketpl
 | Tech workflow assist | `field-coach/` | My jobs, field updates, notes, checklists |
 | BI | `ops-analyst/` | Queue, overview, KPI (read-only) |
 | Growth / campaigns | `growth-marketer/` | Seasonal Saudi campaign drafts (never auto-publish ads) |
+| **Security Guardian** | `security-guardian/` | Continuous audits, threat notify, approval-gated remediations (FE/BE/agents) |
 
-**Autonomous:** confirm, first assign, field progress, read status.  
-**Needs Field Ops approval:** cancel, reassign, customer commitments (price/quote/dispute similarly gated in product UI).  
+**Autonomous:** confirm, first assign, field progress, read status, security *audits* + notifications.  
+**Needs Field Ops / admin approval:** cancel, reassign, customer commitments, **security remediations**.  
 **Needs marketing approval:** any paid ad or live promo from Growth Marketer.
+
+Agent logins use env credentials only (`DARFIX_ADMIN_EMAIL` / `DARFIX_ADMIN_PASSWORD`, etc.) — never hardcoded demo passwords.
 
 ## Run
 

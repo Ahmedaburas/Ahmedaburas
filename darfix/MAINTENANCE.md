@@ -25,6 +25,7 @@ Operating rhythm for the Growth OS demo → production path.
 - Error monitoring on API (add Sentry/OpenTelemetry in production)
 - Agent evals in `darfix-agents/*/evals`
 - SQLite backups via `scripts/backup-db.sh` (demo); Postgres PITR in production
+- **Security Guardian** (`darfix-agents/security-guardian/`): hourly playbook + audit; admin notify on critical/high; remediations require human approval (`POST /api/security/audit`, `/api/security/findings`, `/api/security/remediate/propose`)
 
 ## Backup / restore (demo SQLite)
 

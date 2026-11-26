@@ -34,6 +34,11 @@ import {
   publicAppBaseUrl,
 } from './payments'
 import { demoSeedEnabled, seedIfEmpty } from './seed'
+import {
+  persistFindings,
+  runSecurityAudit,
+  securityPlaybook,
+} from './securityAudit'
 import { defaultChecklist, emptyProcess, type BookingProcess, type BookingStatus } from './types'
 
 migrate()
@@ -2144,6 +2149,9 @@ app.post('/api/agent/approvals/:id/decide', auth, (req: Authed, res) => {
     const payload = JSON.parse((row.payload as string) || '{}') as {
       technicianId?: string
       message?: string
+      findingCode?: string
+      recommendedAction?: string
+      autoFixable?: boolean
     }
     if (action === 'cancel_booking' && bookingId) {
       const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(bookingId) as
@@ -2191,6 +2199,43 @@ app.post('/api/agent/approvals/:id/decide', auth, (req: Authed, res) => {
         commitment: payload.message || note || 'Commitment recorded',
         bookingId,
       }
+    }
+    if (action === 'security_remediation') {
+      const findingCode = payload.findingCode
+      const steps: string[] = []
+      if (findingCode === 'demo_seed_enabled') {
+        db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('security_force_seed_off', '1')`).run()
+        steps.push('Recorded seed-off policy in meta (restart without DARFIX_SEED_DEMO to fully disable).')
+      }
+      if (findingCode === 'approval_flood' || findingCode === 'approval_elevated') {
+        const rejected = db
+          .prepare(
+            `UPDATE agent_approvals SET status = 'rejected', decided_by = ?, decision_note = ?, decided_at = ?
+             WHERE status = 'pending' AND action != 'security_remediation'`,
+          )
+          .run(req.userId, 'Bulk reject after security approval flood triage', now)
+        steps.push(`Rejected ${rejected.changes} non-security pending approvals.`)
+      }
+      if (findingCode === 'playbook_outdated_marker') {
+        db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('security_playbook_version', ?)`).run(
+          securityPlaybook().version,
+        )
+        steps.push('Playbook version marker refreshed.')
+      }
+      // Always mark finding resolved when remediation approved
+      if (findingCode) {
+        db.prepare(
+          `UPDATE security_findings SET status = 'resolved', resolved_at = ?, updated_at = ?, acknowledged_by = ?
+           WHERE code = ?`,
+        ).run(now, now, req.userId, findingCode)
+        steps.push(`Marked finding ${findingCode} resolved.`)
+      }
+      // Revoke non-admin sessions on critical secret issues when approved
+      if (findingCode === 'missing_darfix_secret' || findingCode === 'agent_hardcoded_demo_password') {
+        const cleared = db.prepare(`DELETE FROM sessions WHERE user_id != ?`).run(req.userId)
+        steps.push(`Cleared ${cleared.changes} other sessions (force re-login).`)
+      }
+      applied = { findingCode, steps }
     }
   }
 
@@ -2833,6 +2878,112 @@ app.get('/api/org/campaigns/suggestions', auth, (req: Authed, res) => {
   res.json({
     suggestions,
     note: 'Drafts only — never auto-publish paid ads without partner/DARFIX approval.',
+  })
+})
+
+/** Security Guardian — playbook (versioned checklist; agents pull this to stay current). */
+app.get('/api/security/playbook', auth, (req: Authed, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  res.json(securityPlaybook())
+})
+
+/** Run continuous audit; notify admins on critical/high. */
+app.post('/api/security/audit', auth, (req: Authed, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  const notify = (req.body as { notify?: boolean })?.notify !== false
+  const now = new Date().toISOString()
+  const findings = runSecurityAudit(db)
+  const result = persistFindings(db, findings, { notifyAdmin: notify, uid, now })
+  res.json({
+    ok: true,
+    playbookVersion: securityPlaybook().version,
+    auditedAt: now,
+    findingCount: result.findings.length,
+    alertCount: result.alertCount,
+    findings: result.findings,
+  })
+})
+
+app.get('/api/security/findings', auth, (req: Authed, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  const status = (req.query.status as string) || 'open'
+  const rows = db
+    .prepare(
+      `SELECT * FROM security_findings WHERE status = ? ORDER BY
+        CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+        updated_at DESC LIMIT 100`,
+    )
+    .all(status) as Record<string, unknown>[]
+  res.json({
+    findings: rows.map((r) => ({
+      id: r.id,
+      code: r.code,
+      severity: r.severity,
+      title: r.title,
+      detail: r.detail,
+      surface: r.surface,
+      autoFixable: Boolean(r.auto_fixable),
+      recommendedAction: r.recommended_action,
+      status: r.status,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      resolvedAt: r.resolved_at || null,
+    })),
+  })
+})
+
+app.post('/api/security/findings/:id/ack', auth, (req: Authed, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  const now = new Date().toISOString()
+  const row = db.prepare(`SELECT * FROM security_findings WHERE id = ?`).get(req.params.id) as
+    | Record<string, unknown>
+    | undefined
+  if (!row) return res.status(404).json({ error: 'Not found' })
+  db.prepare(
+    `UPDATE security_findings SET status = 'acknowledged', acknowledged_by = ?, updated_at = ? WHERE id = ?`,
+  ).run(req.userId, now, req.params.id)
+  res.json({ ok: true, id: req.params.id, status: 'acknowledged' })
+})
+
+/**
+ * Propose a security remediation (requires admin decide via /api/agent/approvals).
+ * Safe auto actions are applied only after approval.
+ */
+app.post('/api/security/remediate/propose', auth, (req: Authed, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  const body = req.body as { findingCode: string; rationale: string }
+  if (!body.findingCode || !body.rationale) {
+    return res.status(400).json({ error: 'findingCode and rationale required' })
+  }
+  const finding = db
+    .prepare(`SELECT * FROM security_findings WHERE code = ? AND status IN ('open','acknowledged')`)
+    .get(body.findingCode) as Record<string, unknown> | undefined
+  if (!finding) return res.status(404).json({ error: 'Open finding not found' })
+
+  const id = uid('apr')
+  const now = new Date().toISOString()
+  db.prepare(
+    `INSERT INTO agent_approvals (id, action, booking_id, payload, rationale, proposed_by, status, created_at)
+     VALUES (?, 'security_remediation', NULL, ?, ?, ?, 'pending', ?)`,
+  ).run(
+    id,
+    JSON.stringify({
+      findingCode: body.findingCode,
+      recommendedAction: finding.recommended_action,
+      autoFixable: Boolean(finding.auto_fixable),
+    }),
+    body.rationale,
+    req.userId,
+    now,
+  )
+  res.status(201).json({
+    approval: {
+      id,
+      action: 'security_remediation',
+      status: 'pending',
+      findingCode: body.findingCode,
+      note: 'Awaiting human approval before any corrective action runs.',
+    },
   })
 })
 

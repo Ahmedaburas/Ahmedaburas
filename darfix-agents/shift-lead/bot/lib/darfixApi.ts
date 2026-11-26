@@ -3,14 +3,9 @@
  * Base URL: DARFIX_API_URL (default http://127.0.0.1:8787)
  */
 
-export type RoleAccount = "customer" | "technician" | "admin";
+import { credentialsFor, type RoleAccount } from "./credentials";
 
-const ACCOUNTS: Record<RoleAccount, { email: string; password: string }> = {
-  customer: { email: "customer@darfix.sa", password: "demo123" },
-  technician: { email: "tech@darfix.sa", password: "demo123" },
-  admin: { email: "admin@darfix.sa", password: "demo123" },
-};
-
+export type { RoleAccount };
 function baseUrl() {
   return (process.env.DARFIX_API_URL || "http://127.0.0.1:8787").replace(/\/$/, "");
 }
@@ -40,7 +35,7 @@ async function request<T>(
 }
 
 export async function loginAs(role: RoleAccount) {
-  const account = ACCOUNTS[role];
+  const account = credentialsFor(role);
   return request<{ token: string; user: { id: string; role: string; name: string; email: string } }>(
     "/api/auth/login",
     { method: "POST", body: JSON.stringify(account) },
@@ -124,4 +119,4 @@ export async function getHealth() {
   return request<{ ok: boolean; service: string }>("/api/health");
 }
 
-export { ACCOUNTS, baseUrl };
+export { baseUrl };

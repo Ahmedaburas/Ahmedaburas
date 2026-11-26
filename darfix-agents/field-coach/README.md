@@ -52,7 +52,7 @@ Example prompts in the playground:
 | `darfix_customer_status` | customer bootstrap view |
 | `darfix_tech_update` | status / note / checklist |
 
-Demo accounts used by tools: `admin@` / `tech@` / `customer@darfix.sa` (`demo123`).
+Demo accounts used by tools: `admin@` / `tech@` / `customer@darfix.sa` (env credentials (DARFIX_*_EMAIL / DARFIX_*_PASSWORD)).
 
 ## Schedule
 

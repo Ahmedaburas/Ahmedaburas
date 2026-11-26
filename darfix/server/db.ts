@@ -290,6 +290,26 @@ export function migrate() {
       ON users(technician_code)
       WHERE technician_code IS NOT NULL
   `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS security_findings (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      severity TEXT NOT NULL,
+      title TEXT NOT NULL,
+      detail TEXT NOT NULL,
+      surface TEXT NOT NULL,
+      auto_fixable INTEGER NOT NULL DEFAULT 0,
+      recommended_action TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      resolved_at TEXT,
+      acknowledged_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_security_findings_status
+      ON security_findings(status, severity);
+  `)
 }
 
 export function uid(prefix: string) {
