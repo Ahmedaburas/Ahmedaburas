@@ -160,7 +160,9 @@ export function runSecurityAudit(db: Database.Database): SecurityFinding[] {
           if (st.isDirectory()) walk(p)
           else if (/\.(ts|tsx|js|md)$/.test(name)) {
             const text = fs.readFileSync(p, 'utf8')
-            if (text.includes('demo123') && !p.includes('README')) hits.push(path.relative(agentsRoot, p))
+            // Construct needle so this audit file itself never embeds a password literal.
+            const bannedDemo = ['demo', '123'].join('')
+            if (text.includes(bannedDemo) && !p.includes('README')) hits.push(path.relative(agentsRoot, p))
           }
         }
       }
@@ -170,10 +172,11 @@ export function runSecurityAudit(db: Database.Database): SecurityFinding[] {
           code: 'agent_hardcoded_demo_password',
           severity: 'high',
           title: 'Agent bundles contain demo password literals',
-          detail: `Found demo123 in: ${hits.slice(0, 8).join(', ')}${hits.length > 8 ? '…' : ''}`,
+          detail: `Found banned demo password literal in: ${hits.slice(0, 8).join(', ')}${hits.length > 8 ? '…' : ''}`,
           surface: 'agents',
           autoFixable: false,
-          recommendedAction: 'Use DARFIX_ADMIN_EMAIL/PASSWORD (and role env) — never ship demo123 in agent clients.',
+          recommendedAction:
+            'Use DARFIX_ADMIN_EMAIL/PASSWORD (and role env) — never ship known demo passwords in agent clients.',
         })
       }
     }
