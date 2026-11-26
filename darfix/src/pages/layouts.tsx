@@ -55,6 +55,7 @@ export function ProviderLayout() {
       title={t('maintenanceCompany')}
       nav={[
         { to: '/provider', label: t('dashboard') },
+        { to: '/provider/control-tower', label: t('controlTower') },
         { to: '/provider/billing', label: t('billing') },
         { to: '/provider/notifications', label: t('notifications') },
       ]}

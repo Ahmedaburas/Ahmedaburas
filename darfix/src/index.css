@@ -100,3 +100,26 @@ html[dir="rtl"] body {
 .label-text {
   @apply mb-1.5 block text-sm font-medium text-navy-900;
 }
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .tower-print-area,
+  .tower-print-area * {
+    visibility: visible !important;
+  }
+  .tower-print-area {
+    position: absolute;
+    inset: 0;
+    background: white !important;
+    padding: 24px !important;
+  }
+  nav,
+  header,
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost {
+    display: none !important;
+  }
+}

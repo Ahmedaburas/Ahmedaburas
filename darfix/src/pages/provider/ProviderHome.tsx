@@ -204,17 +204,25 @@ export function ProviderHome() {
         ))}
       </div>
 
-      {/* AI Control Tower */}
+      {/* AI Control Tower teaser → full visual tower */}
       <section className="rounded-2xl border border-navy-900/10 bg-gradient-to-br from-navy-900 to-navy-800 p-5 text-white">
-        <div className="mb-4 flex items-center gap-2">
-          <Radar className="h-5 w-5 text-teal-300" />
-          <div>
-            <h2 className="font-semibold">{t('controlTower')}</h2>
-            <p className="text-xs text-white/55">{t('controlTowerSub')}</p>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Radar className="h-5 w-5 text-teal-300" />
+            <div>
+              <h2 className="font-semibold">{t('controlTower')}</h2>
+              <p className="text-xs text-white/55">{t('controlTowerSub')}</p>
+            </div>
           </div>
+          <Link
+            to="/provider/control-tower"
+            className="rounded-xl bg-teal-500 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-400"
+          >
+            {t('towerOpenFull')}
+          </Link>
         </div>
         {towerAlerts.length === 0 ? (
-          <p className="text-sm text-white/60">{t('noData')}</p>
+          <p className="text-sm text-white/60">{t('towerAllClear')}</p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {towerAlerts.map((a) => (
