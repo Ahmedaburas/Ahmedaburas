@@ -9,7 +9,6 @@ import {
 } from 'react'
 import { api, getStoredLocale, getToken, setStoredLocale, setToken } from '../api/client'
 import type { ServiceCategoryId } from '../config/services'
-import { DEMO_PASSWORD } from './seed'
 import type {
   AppState,
   Booking,
@@ -560,5 +559,3 @@ export function useUsersByRole(role: UserRole) {
   const { state } = useStore()
   return state.users.filter((u) => u.role === role)
 }
-
-export { DEMO_PASSWORD }

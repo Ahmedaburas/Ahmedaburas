@@ -39,7 +39,7 @@ export function ProviderHome() {
     name: '',
     email: '',
     phone: '',
-    password: 'demo123',
+    password: '',
   })
 
   useEffect(() => {
@@ -311,7 +311,7 @@ export function ProviderHome() {
                 setInviteError(result.error)
                 return
               }
-              setInviteForm({ name: '', email: '', phone: '', password: 'demo123' })
+              setInviteForm({ name: '', email: '', phone: '', password: '' })
               setSeats({
                 used: result.seats.used,
                 max: result.seats.max,

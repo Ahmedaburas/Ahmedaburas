@@ -51,9 +51,17 @@ npm run start:pilot
 
 Open `http://127.0.0.1:8787` (frontend + `/api`). Dev mode still uses Vite proxy on `:5173` → API `:8787`.
 
-## Demo accounts
+## Local demo data (optional)
 
-Password: `demo123`
+Demo users are **not** seeded by default (pilot/publish starts empty or with a single admin from env).
+
+For local UI smoke only:
+
+```bash
+export DARFIX_SEED_DEMO=1
+export DARFIX_DEMO_PASSWORD='demo123'   # local env only — never commit / never ship in SPA
+npm run dev
+```
 
 | Role | Email |
 | --- | --- |
@@ -62,6 +70,14 @@ Password: `demo123`
 | Founding partner (Eastern Home Care) | `company@darfix.sa` |
 | Partner (Dammam Fix Pros) | `dammam@darfix.sa` |
 | Admin | `admin@darfix.sa` |
+
+### Pilot bootstrap (no demo passwords)
+
+```bash
+export DARFIX_ADMIN_EMAIL=you@example.com
+export DARFIX_ADMIN_PASSWORD='…strong…'   # bind via secrets; never hardcode in source
+# Do NOT set DARFIX_SEED_DEMO on publish
+```
 
 Partner pricing (proposed): Launch free (1 seat) · Growth 149 (3) · Pro 399 (10) · Business 799 (25) · Enterprise 1500–3500+ (unlimited) SAR/mo. Founding 20: **14-day** Pro free trial (env `DARFIX_TRIAL_DAYS`, suggest 7–14), then 299 for 12 months.
 

@@ -33,7 +33,7 @@ import {
   paymentsMode,
   publicAppBaseUrl,
 } from './payments'
-import { seedIfEmpty } from './seed'
+import { demoSeedEnabled, seedIfEmpty } from './seed'
 import { defaultChecklist, emptyProcess, type BookingProcess, type BookingStatus } from './types'
 
 migrate()
@@ -377,6 +377,65 @@ function userOrgId(userId: string): string | undefined {
   return row?.organization_id || undefined
 }
 
+/** Public-safe partner card — no phones, CR, emails, WhatsApp, or internal ops fields. */
+function publicOrganization(org: ReturnType<typeof mapOrganization>) {
+  return {
+    id: org.id,
+    kind: org.kind,
+    name: org.name,
+    nameAr: org.nameAr,
+    cityId: org.cityId,
+    serviceCityIds: org.serviceCityIds,
+    status: org.status,
+    foundingPartner: org.foundingPartner,
+    specialties: org.specialties,
+  }
+}
+
+/** Strip sensitive org fields unless admin or the caller's own organization. */
+function organizationsForRole(
+  orgs: ReturnType<typeof mapOrganization>[],
+  role: string,
+  ownOrgId?: string,
+) {
+  if (role === 'admin') return orgs
+  return orgs.map((o) => (ownOrgId && o.id === ownOrgId ? o : publicOrganization(o)))
+}
+
+/** Validate client-submitted cost lines before append. */
+function sanitizeCostLines(
+  incoming: unknown,
+): { ok: true; lines: object[] } | { ok: false; error: string } {
+  if (!Array.isArray(incoming)) return { ok: false, error: 'costs must be an array' }
+  if (incoming.length > 20) return { ok: false, error: 'Too many cost lines' }
+  const allowedTypes = new Set(['labor', 'materials', 'fee', 'discount'])
+  const lines: object[] = []
+  for (const raw of incoming) {
+    if (!raw || typeof raw !== 'object') return { ok: false, error: 'Invalid cost line' }
+    const item = raw as Record<string, unknown>
+    const label = typeof item.label === 'string' ? item.label.trim() : ''
+    if (!label || label.length > 200) return { ok: false, error: 'Invalid cost label' }
+    const amount = Number(item.amountSar)
+    if (!Number.isFinite(amount) || Math.abs(amount) > 100_000) {
+      return { ok: false, error: 'Invalid cost amount' }
+    }
+    const type = typeof item.type === 'string' ? item.type : 'materials'
+    if (!allowedTypes.has(type)) return { ok: false, error: 'Invalid cost type' }
+    // Field staff may only add labor/materials with non-negative amounts (no discounts/fees).
+    if (type === 'discount' || type === 'fee') {
+      return { ok: false, error: 'Only labor/materials may be added via this endpoint' }
+    }
+    if (amount < 0) return { ok: false, error: 'Cost amount must be >= 0' }
+    lines.push({
+      id: typeof item.id === 'string' && item.id.length < 64 ? item.id : uid('cost'),
+      label,
+      amountSar: Math.round(amount * 100) / 100,
+      type,
+    })
+  }
+  return { ok: true, lines }
+}
+
 function loadBootstrap(userId: string, role: string, locale: 'en' | 'ar') {
   let users = db
     .prepare(`SELECT * FROM users`)
@@ -440,38 +499,41 @@ function loadBootstrap(userId: string, role: string, locale: 'en' | 'ar') {
 
   let visibleOrgs = organizations
   let visibleMembers = organizationMembers
+  const ownOrgId = userOrgId(userId)
   if (role === 'provider') {
-    const orgId = userOrgId(userId)
-    visibleOrgs = organizations.filter((o) => o.id === orgId)
-    visibleMembers = organizationMembers.filter((m) => m.organizationId === orgId)
+    visibleOrgs = organizations.filter((o) => o.id === ownOrgId)
+    visibleMembers = organizationMembers.filter((m) => m.organizationId === ownOrgId)
     const memberUserIds = new Set(visibleMembers.map((m) => m.userId))
     const bookingCustomerIds = new Set(bookings.map((b) => b.customerId))
     users = users.filter(
       (u) => u.id === userId || memberUserIds.has(u.id) || bookingCustomerIds.has(u.id),
     )
   } else if (role === 'technician') {
-    const orgId = userOrgId(userId)
-    visibleOrgs = organizations.filter((o) => o.id === orgId)
-    visibleMembers = organizationMembers.filter((m) => m.organizationId === orgId)
+    visibleOrgs = organizations.filter((o) => o.id === ownOrgId)
+    visibleMembers = organizationMembers.filter((m) => m.organizationId === ownOrgId)
     const memberUserIds = new Set(visibleMembers.map((m) => m.userId))
     const bookingCustomerIds = new Set(bookings.map((b) => b.customerId))
     users = users.filter(
       (u) => u.id === userId || memberUserIds.has(u.id) || bookingCustomerIds.has(u.id),
     )
   } else if (role === 'customer') {
-    // Customers see active partners for match/choose UX + orgs on their bookings
+    // Customers see active partners for match/choose UX + orgs on their bookings (public fields only)
     const linked = new Set(bookings.map((b) => b.organizationId).filter(Boolean) as string[])
     visibleOrgs = organizations.filter(
       (o) => o.status === 'active' || linked.has(o.id),
     )
-    visibleMembers = organizationMembers.filter((m) =>
-      visibleOrgs.some((o) => o.id === m.organizationId),
-    )
+    visibleMembers = [] // no cross-tenant member directory for customers
     const techIds = new Set(bookings.map((b) => b.technicianId).filter(Boolean) as string[])
-    users = users.filter(
-      (u) => u.id === userId || techIds.has(u.id) || (u.role === 'technician' && u.active !== false),
-    )
+    users = users
+      .filter((u) => u.id === userId || techIds.has(u.id))
+      .map((u) =>
+        u.id === userId
+          ? u
+          : { ...u, email: '', phone: '', password: undefined },
+      )
   }
+
+  visibleOrgs = organizationsForRole(visibleOrgs, role, ownOrgId) as typeof organizations
 
   let leadOffers = db
     .prepare(`SELECT * FROM lead_offers ORDER BY offered_at DESC`)
@@ -507,8 +569,9 @@ function loadBootstrap(userId: string, role: string, locale: 'en' | 'ar') {
     notifications,
     quotations,
     invoices,
-    discountCodes: role === 'admin' || role === 'customer' ? discountCodes : [],
-    pricingOverrides,
+    // Never list all discount codes to customers — apply validates a code at booking time.
+    discountCodes: role === 'admin' ? discountCodes : [],
+    pricingOverrides: role === 'admin' ? pricingOverrides : [],
     organizations: visibleOrgs,
     organizationMembers: visibleMembers,
     leadOffers,
@@ -854,13 +917,17 @@ app.patch('/api/locale', auth, (req: Authed, res) => {
 
 app.post('/api/demo/reset', auth, (req: Authed, res) => {
   if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
-  if (isProdLike()) {
-    return res.status(403).json({ error: 'Demo reset disabled in production' })
+  if (isProdLike() || !demoSeedEnabled()) {
+    return res.status(403).json({ error: 'Demo reset disabled (requires DARFIX_SEED_DEMO=1, not production)' })
   }
   seedIfEmpty(true)
-  const token = createSession('admin-1')
-  // Never echo demo passwords in API responses (UI may show its own local hint).
-  res.json({ token, state: loadBootstrap('admin-1', 'admin', 'en') })
+  const admin = db.prepare(`SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1`).get() as
+    | { id: string }
+    | undefined
+  if (!admin) return res.status(500).json({ error: 'Demo seed failed' })
+  const token = createSession(admin.id)
+  // Never return passwords — only a fresh session + bootstrap state.
+  res.json({ token, state: loadBootstrap(admin.id, 'admin', 'en') })
 })
 
 app.get('/api/fees/:categoryId/:problemId', (_req, res) => {
@@ -1276,9 +1343,11 @@ app.post('/api/bookings/:id/costs', auth, (req: Authed, res) => {
     | undefined
   if (!requireBookingAccess(req, res, booking, 'costs')) return
   const costs = JSON.parse((booking.costs as string) || '[]') as unknown[]
-  const incoming = (req.body as { costs: unknown[] }).costs || []
+  const sanitized = sanitizeCostLines((req.body as { costs: unknown[] }).costs || [])
+  if (!sanitized.ok) return res.status(400).json({ error: sanitized.error })
+  // Admins may append validated lines as-is; field roles already constrained in sanitizeCostLines.
   db.prepare(`UPDATE bookings SET costs = ?, updated_at = ? WHERE id = ?`).run(
-    JSON.stringify([...costs, ...incoming]),
+    JSON.stringify([...costs, ...sanitized.lines]),
     new Date().toISOString(),
     req.params.id,
   )
@@ -1888,14 +1957,21 @@ app.post('/api/bookings/:id/gps', auth, (req: Authed, res) => {
   })
 })
 
-app.get('/api/partners', (_req, res) => {
+app.get('/api/partners', auth, (req: Authed, res) => {
+  // Directory requires a session; customers/providers get public-safe fields only.
   const orgs = db
     .prepare(
       `SELECT * FROM provider_organizations WHERE status = 'active' ORDER BY founding_partner DESC, name`,
     )
     .all()
     .map((o) => mapOrganization(o as Record<string, unknown>))
-  res.json({ partners: orgs, launchRegion: 'eastern-province' })
+  const role = req.userRole || ''
+  const ownOrgId = role === 'provider' || role === 'technician' ? userOrgId(req.userId!) : undefined
+  const partners =
+    role === 'admin'
+      ? orgs
+      : orgs.map((o) => (ownOrgId && o.id === ownOrgId ? o : publicOrganization(o)))
+  res.json({ partners, launchRegion: 'eastern-province' })
 })
 
 app.post('/api/discounts', auth, (req: Authed, res) => {

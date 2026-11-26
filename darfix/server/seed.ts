@@ -3,7 +3,15 @@ import { db, SEED_VERSION, uid } from './db'
 import { DEFAULT_TRIAL_DAYS, formatTechnicianCode, trialEndsAt } from './plans'
 import { defaultChecklist, emptyProcess, type BookingProcess } from './types'
 
-const DEMO_PASSWORD = 'demo123'
+/** Local-only full demo dataset. Never enable on pilot/production publish. */
+export function demoSeedEnabled() {
+  return process.env.DARFIX_SEED_DEMO === '1'
+}
+
+function resolveDemoPassword(): string | null {
+  const fromEnv = process.env.DARFIX_DEMO_PASSWORD?.trim()
+  return fromEnv || null
+}
 
 function hoursAgo(h: number) {
   return new Date(Date.now() - h * 3600000).toISOString()
@@ -15,15 +23,7 @@ function hoursFromNow(h: number) {
   return new Date(Date.now() + h * 3600000).toISOString()
 }
 
-export function seedIfEmpty(force = false) {
-  const seeded = db.prepare(`SELECT value FROM meta WHERE key = 'seeded'`).get() as
-    | { value: string }
-    | undefined
-  const version = db.prepare(`SELECT value FROM meta WHERE key = 'seed_version'`).get() as
-    | { value: string }
-    | undefined
-  if (seeded && version?.value === SEED_VERSION && !force) return false
-
+function wipeAllData() {
   db.exec(`
     DELETE FROM sessions;
     DELETE FROM notifications;
@@ -39,8 +39,70 @@ export function seedIfEmpty(force = false) {
     DELETE FROM provider_organizations;
     DELETE FROM meta;
   `)
+}
 
-  const hash = bcrypt.hashSync(DEMO_PASSWORD, 8)
+/** Pilot/production: empty DB or a single admin from env (no hardcoded passwords). */
+function ensurePilotAdmin(): boolean {
+  const row = db.prepare(`SELECT COUNT(*) AS c FROM users`).get() as { c: number }
+  if (row.c > 0) return false
+
+  const email = process.env.DARFIX_ADMIN_EMAIL?.trim()
+  const password = process.env.DARFIX_ADMIN_PASSWORD
+  if (!email || !password) {
+    console.warn(
+      '[darfix] Empty users table — set DARFIX_ADMIN_EMAIL + DARFIX_ADMIN_PASSWORD to bootstrap admin, or DARFIX_SEED_DEMO=1 for local demo data',
+    )
+    return false
+  }
+
+  const now = new Date().toISOString()
+  const hash = bcrypt.hashSync(password, 10)
+  db.prepare(
+    `INSERT INTO users (
+      id, role, name, name_ar, email, phone, password_hash,
+      city_id, district_id, specialties, rating, review_count, active, avatar_color,
+      employment_type, organization_id, technician_code, last_active_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, 0, 1, ?, NULL, NULL, NULL, ?, ?)`,
+  ).run(
+    'admin-1',
+    'admin',
+    'DARFIX Admin',
+    'مسؤول دارفكس',
+    email.toLowerCase(),
+    '',
+    hash,
+    '#0f766e',
+    now,
+    now,
+  )
+  db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('seeded', ?)`).run(now)
+  db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('seed_version', ?)`).run(
+    `pilot-admin-${SEED_VERSION}`,
+  )
+  console.info(`[darfix] Bootstrapped admin from DARFIX_ADMIN_EMAIL (${email})`)
+  return true
+}
+
+function seedDemoDataset(force: boolean): boolean {
+  const seeded = db.prepare(`SELECT value FROM meta WHERE key = 'seeded'`).get() as
+    | { value: string }
+    | undefined
+  const version = db.prepare(`SELECT value FROM meta WHERE key = 'seed_version'`).get() as
+    | { value: string }
+    | undefined
+  if (seeded && version?.value === SEED_VERSION && !force) return false
+
+  const demoPassword = resolveDemoPassword()
+  if (!demoPassword) {
+    console.error(
+      '[darfix] DARFIX_SEED_DEMO=1 requires DARFIX_DEMO_PASSWORD (set in local env only; never hardcode)',
+    )
+    return false
+  }
+
+  wipeAllData()
+
+  const hash = bcrypt.hashSync(demoPassword, 8)
   const insertUser = db.prepare(`
     INSERT INTO users (
       id, role, name, name_ar, email, phone, password_hash,
@@ -920,4 +982,21 @@ export function seedIfEmpty(force = false) {
   return true
 }
 
-export { DEMO_PASSWORD, uid }
+/**
+ * Boot / reset entrypoint.
+ * - DARFIX_SEED_DEMO=1 → full local demo dataset (password from DARFIX_DEMO_PASSWORD only)
+ * - otherwise → no demo users; optional single admin from DARFIX_ADMIN_EMAIL + DARFIX_ADMIN_PASSWORD
+ */
+export function seedIfEmpty(force = false) {
+  if (demoSeedEnabled()) {
+    return seedDemoDataset(force)
+  }
+  if (force) {
+    // Hard wipe without re-seeding demos — pilot reset is disabled at the route layer.
+    wipeAllData()
+    return ensurePilotAdmin()
+  }
+  return ensurePilotAdmin()
+}
+
+export { uid }

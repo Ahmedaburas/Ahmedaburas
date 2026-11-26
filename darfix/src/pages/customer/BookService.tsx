@@ -38,7 +38,6 @@ export function BookService() {
   const [preferredDate, setPreferredDate] = useState('')
   const [preferredTimeSlot, setPreferredTimeSlot] = useState('10-12')
   const [discountCode, setDiscountCode] = useState('')
-  const [appliedDiscount, setAppliedDiscount] = useState(0)
   const [preferredOrganizationId, setPreferredOrganizationId] = useState<string | 'auto'>('auto')
 
   const partners = state.organizations.filter(
@@ -55,7 +54,7 @@ export function BookService() {
   )
 
   const baseFee = categoryId && problemId ? actions.getEffectiveFee(categoryId, problemId) : 0
-  const estimatedFee = Math.max(0, baseFee - appliedDiscount)
+  const estimatedFee = baseFee
 
   const canNext = () => {
     if (step === 0) return !!categoryId
@@ -80,17 +79,6 @@ export function BookService() {
       })
     }
     setPhotos((p) => [...p, ...next].slice(0, 6))
-  }
-
-  const applyDiscount = () => {
-    if (!discountCode.trim() || !baseFee) {
-      setAppliedDiscount(0)
-      return
-    }
-    // Preview only — actual apply happens on submit via store
-    const codes: Record<string, number> = { WELCOME20: 20, RAMADAN15: 15 }
-    const pct = codes[discountCode.trim().toUpperCase()]
-    setAppliedDiscount(pct ? Math.round((baseFee * pct) / 100) : 0)
   }
 
   const submit = async () => {
@@ -392,25 +380,20 @@ export function BookService() {
                 value={`${street}, ${districts.find((d) => d.id === districtId)?.[locale === 'ar' ? 'nameAr' : 'nameEn']}`}
               />
             </dl>
-            <div className="flex gap-2">
+            <div>
               <input
                 className="input-field"
                 placeholder={t('discountCode')}
                 value={discountCode}
                 onChange={(e) => setDiscountCode(e.target.value)}
               />
-              <button type="button" className="btn-secondary shrink-0" onClick={applyDiscount}>
-                {t('apply')}
-              </button>
+              <p className="mt-1 text-xs text-navy-700/50">{t('discountCode')}</p>
             </div>
             <div className="rounded-xl border border-navy-100 bg-sand-50/80 p-4">
               <div className="flex justify-between text-sm">
                 <span>{t('estimatedFee')}</span>
                 <span className="font-bold">{formatSar(estimatedFee)}</span>
               </div>
-              {appliedDiscount > 0 && (
-                <p className="mt-1 text-xs text-teal-600">−{formatSar(appliedDiscount)}</p>
-              )}
             </div>
           </div>
         )}
