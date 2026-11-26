@@ -52,9 +52,11 @@ All agents connect to the **same DARFIX API** — partner SaaS + demand marketpl
 | Customer updates | `customer-support/` | Customer status / ETA; propose customer commitments |
 | Tech workflow assist | `field-coach/` | My jobs, field updates, notes, checklists |
 | BI | `ops-analyst/` | Queue, overview, KPI (read-only) |
+| Growth / campaigns | `growth-marketer/` | Seasonal Saudi campaign drafts (never auto-publish ads) |
 
 **Autonomous:** confirm, first assign, field progress, read status.  
-**Needs Field Ops approval:** cancel, reassign, customer commitments (price/quote/dispute similarly gated in product UI).
+**Needs Field Ops approval:** cancel, reassign, customer commitments (price/quote/dispute similarly gated in product UI).  
+**Needs marketing approval:** any paid ad or live promo from Growth Marketer.
 
 ## Run
 
