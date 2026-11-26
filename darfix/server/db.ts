@@ -234,9 +234,44 @@ export function migrate() {
   if (!hasColumn('provider_organizations', 'onboarding_survey')) {
     db.exec(`ALTER TABLE provider_organizations ADD COLUMN onboarding_survey TEXT`)
   }
+  if (!hasColumn('provider_organizations', 'subscription_status')) {
+    db.exec(
+      `ALTER TABLE provider_organizations ADD COLUMN subscription_status TEXT DEFAULT 'none'`,
+    )
+  }
+  // Idempotent: open-trial orgs that never checked out stay trialing (not active).
+  db.exec(`
+    UPDATE provider_organizations
+    SET subscription_status = 'trialing'
+    WHERE trial_ends_at IS NOT NULL
+      AND trial_ends_at > datetime('now')
+      AND subscription_status = 'none'
+  `)
   if (!hasColumn('quotations', 'submitted_by')) {
     db.exec(`ALTER TABLE quotations ADD COLUMN submitted_by TEXT`)
   }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS subscription_checkouts (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL REFERENCES provider_organizations(id) ON DELETE CASCADE,
+      plan_id TEXT NOT NULL,
+      amount_sar REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'SAR',
+      provider TEXT NOT NULL,
+      external_id TEXT,
+      checkout_url TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      paid_at TEXT,
+      metadata TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_subscription_checkouts_org
+      ON subscription_checkouts(organization_id);
+    CREATE INDEX IF NOT EXISTS idx_subscription_checkouts_external
+      ON subscription_checkouts(external_id);
+  `)
   if (!hasColumn('quotations', 'company_note')) {
     db.exec(`ALTER TABLE quotations ADD COLUMN company_note TEXT`)
   }

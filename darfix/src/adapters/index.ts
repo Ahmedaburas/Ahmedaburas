@@ -1,4 +1,10 @@
-export { paymentService, type PaymentService, type PaymentIntent } from './payments'
+export {
+  paymentService,
+  SUBSCRIPTION_CARD_METHODS,
+  type PaymentService,
+  type PaymentIntent,
+  type SubscriptionCheckoutIntent,
+} from './payments'
 export {
   notificationService,
   SUPPORT_WHATSAPP,

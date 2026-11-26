@@ -28,6 +28,8 @@ export function ProviderHome() {
     max: number | null
     atLimit: boolean
     trialEndsAt: string | null
+    paywall?: boolean
+    subscriptionStatus?: string
   } | null>(null)
   const [campaigns, setCampaigns] = useState<
     { id: string; titleEn: string; titleAr: string; window: string; offerIdea: string }[]
@@ -47,6 +49,8 @@ export function ProviderHome() {
         max: s.max,
         atLimit: s.atLimit,
         trialEndsAt: s.trialEndsAt,
+        paywall: s.paywall,
+        subscriptionStatus: s.subscriptionStatus,
       }),
     ).catch(() => undefined)
     void api.campaignSuggestions().then((r) => setCampaigns(r.suggestions.slice(0, 4))).catch(() => undefined)
@@ -166,9 +170,22 @@ export function ProviderHome() {
         </div>
       </div>
 
+      {seats?.paywall && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold">{t('paywallTitle')}</p>
+          <p className="mt-1 text-amber-900/80">{t('paywallBody')}</p>
+          <Link to="/provider/billing" className="mt-2 inline-block font-semibold text-teal-800 underline">
+            {t('payWithCards')}
+          </Link>
+        </div>
+      )}
+
       {(seats?.atLimit || (plan?.maxTechnicians != null && memberTechs.length >= plan.maxTechnicians)) && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {t('seatLimitReached')} {t('upgradeForSeats')}
+          {t('seatLimitReached')} {t('upgradeForSeats')}{' '}
+          <Link to="/provider/billing" className="font-semibold text-teal-800 underline">
+            {t('billing')}
+          </Link>
         </p>
       )}
 

@@ -1,4 +1,16 @@
-import type { AppState, Booking, BookingStatus, CostLine, DiscountCode, Invoice, JobPhoto, PricingOverride, Quotation, User } from '../store/types'
+import type {
+  AppState,
+  Booking,
+  BookingStatus,
+  CostLine,
+  DiscountCode,
+  Invoice,
+  JobPhoto,
+  PricingOverride,
+  ProviderOrganization,
+  Quotation,
+  User,
+} from '../store/types'
 import type { ServiceCategoryId } from '../config/services'
 
 const TOKEN_KEY = 'darfix_token'
@@ -76,11 +88,10 @@ export const api = {
     serviceCityIds?: string[]
     priceApproverName?: string
     priceApproverPhone?: string
-    foundingPartner?: boolean
-    trialDays?: number
   }) =>
     request<{ token: string; user: User; organization: unknown }>('/auth/signup/provider', {
       method: 'POST',
+      // foundingPartner / trialDays are server-controlled (allowlist); never send from client
       body: JSON.stringify(data),
     }),
 
@@ -241,12 +252,78 @@ export const api = {
     request<{
       organizationId: string
       plan: string
+      subscriptionStatus?: string
       used: number
       max: number | null
       trialDays: number | null
       trialEndsAt: string | null
       atLimit: boolean
+      paywall?: boolean
+      paymentsProvider?: string
     }>('/org/seats'),
+
+  subscriptionPlans: () =>
+    request<{
+      currency: string
+      methods: string[]
+      paymentsProvider: string
+      note: string
+      plans: {
+        id: string
+        maxTechnicians: number | null
+        priceSar: number | null
+        labelEn: string
+        checkoutEnabled: boolean
+      }[]
+    }>('/subscription/plans'),
+
+  orgSubscription: () =>
+    request<{
+      organization: ProviderOrganization
+      subscriptionStatus: string
+      plan: string
+      trialEndsAt: string | null
+      trialActive: boolean
+      paywall: boolean
+      paymentsProvider: string
+      methods: string[]
+      checkoutPlans: { id: string; priceSar: number | null; labelEn: string; maxTechnicians: number | null }[]
+      pendingCheckouts: {
+        id: string
+        planId: string
+        amountSar: number
+        provider: string
+        checkoutUrl: string | null
+        status: string
+      }[]
+    }>('/org/subscription'),
+
+  startSubscriptionCheckout: (planId: string) =>
+    request<{
+      checkout: {
+        id: string
+        planId: string
+        amountSar: number
+        provider: string
+        checkoutUrl: string | null
+        status: string
+      }
+      methods: string[]
+      paymentsProvider: string
+      simulateAvailable: boolean
+      note: string
+    }>('/org/subscription/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ planId }),
+    }),
+
+  simulateSubscriptionCheckout: (checkoutId: string) =>
+    request<{
+      ok?: boolean
+      alreadyPaid?: boolean
+      organization: ProviderOrganization
+      checkout: { id: string; status: string; planId: string }
+    }>(`/org/subscription/checkout/${checkoutId}/simulate`, { method: 'POST' }),
 
   inviteTechnician: (data: {
     name: string

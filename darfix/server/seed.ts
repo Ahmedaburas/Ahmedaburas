@@ -57,13 +57,13 @@ export function seedIfEmpty(force = false) {
     INSERT INTO provider_organizations (
       id, kind, name, name_ar, city_id, phone, email,
       commercial_registration, license_number, status,
-      subscription_plan, founding_partner, service_city_ids,
+      subscription_plan, subscription_status, founding_partner, service_city_ids,
       trial_days, trial_ends_at, whatsapp, sla_hours, tech_count_declared,
       specialties, price_approver_name, price_approver_phone, onboarding_survey, created_at
     ) VALUES (
       @id, @kind, @name, @name_ar, @city_id, @phone, @email,
       @commercial_registration, @license_number, @status,
-      @subscription_plan, @founding_partner, @service_city_ids,
+      @subscription_plan, @subscription_status, @founding_partner, @service_city_ids,
       @trial_days, @trial_ends_at, @whatsapp, @sla_hours, @tech_count_declared,
       @specialties, @price_approver_name, @price_approver_phone, @onboarding_survey, @created_at
     )
@@ -97,6 +97,7 @@ export function seedIfEmpty(force = false) {
       license_number: 'EP-MNT-2024-88',
       status: 'active',
       subscription_plan: 'pro',
+      subscription_status: 'trialing',
       founding_partner: 1,
       service_city_ids: JSON.stringify(['khobar', 'dhahran', 'dammam', 'jubail']),
       trial_days: DEFAULT_TRIAL_DAYS,
@@ -127,6 +128,7 @@ export function seedIfEmpty(force = false) {
       license_number: 'DMM-MNT-2025-12',
       status: 'active',
       subscription_plan: 'growth',
+      subscription_status: 'trialing',
       founding_partner: 1,
       service_city_ids: JSON.stringify(['dammam', 'khobar', 'dhahran']),
       trial_days: DEFAULT_TRIAL_DAYS,
@@ -157,6 +159,7 @@ export function seedIfEmpty(force = false) {
       license_number: 'JBL-MNT-2024-88',
       status: 'active',
       subscription_plan: 'pro',
+      subscription_status: 'trialing',
       founding_partner: 1,
       service_city_ids: JSON.stringify(['jubail', 'dammam']),
       trial_days: DEFAULT_TRIAL_DAYS,
@@ -181,6 +184,7 @@ export function seedIfEmpty(force = false) {
       license_number: 'FREELANCE-EP-01',
       status: 'active',
       subscription_plan: 'launch',
+      subscription_status: 'none',
       founding_partner: 0,
       service_city_ids: JSON.stringify(['khobar', 'dhahran']),
       trial_days: null,
@@ -205,6 +209,7 @@ export function seedIfEmpty(force = false) {
       license_number: 'FREELANCE-EP-02',
       status: 'active',
       subscription_plan: 'launch',
+      subscription_status: 'none',
       founding_partner: 0,
       service_city_ids: JSON.stringify(['dammam', 'khobar']),
       trial_days: null,

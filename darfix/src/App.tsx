@@ -14,6 +14,7 @@ import { CustomerBookingDetail } from './pages/customer/BookingDetail'
 import { TechHome } from './pages/technician/TechHome'
 import { TechJobDetail } from './pages/technician/JobDetail'
 import { ProviderHome } from './pages/provider/ProviderHome'
+import { ProviderBilling } from './pages/provider/Billing'
 import { AdminOverview } from './pages/admin/AdminOverview'
 import { AdminBookings, AdminBookingDetail } from './pages/admin/AdminBookings'
 import { AdminCustomers, AdminTechnicians } from './pages/admin/AdminPeople'
@@ -87,6 +88,7 @@ export default function App() {
               }
             >
               <Route index element={<ProviderHome />} />
+              <Route path="billing" element={<ProviderBilling />} />
               <Route path="bookings/:id" element={<ProviderHome />} />
               <Route path="notifications" element={<NotificationsPage />} />
             </Route>

@@ -48,6 +48,7 @@ export function mapOrganization(row: Row) {
     licenseNumber: (row.license_number as string) || undefined,
     status: row.status as string,
     subscriptionPlan: ((row.subscription_plan as string) || 'launch') as string,
+    subscriptionStatus: ((row.subscription_status as string) || 'none') as string,
     foundingPartner: Boolean(row.founding_partner),
     trialDays: (row.trial_days as number) ?? undefined,
     trialEndsAt: (row.trial_ends_at as string) || undefined,

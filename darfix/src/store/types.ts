@@ -42,6 +42,8 @@ export interface ProviderOrganization {
   licenseNumber?: string
   status: 'active' | 'pending_review' | 'suspended'
   subscriptionPlan?: SubscriptionPlan
+  /** none | trialing | active | past_due | canceled */
+  subscriptionStatus?: string
   foundingPartner?: boolean
   /** Free trial length in days (Founding / Pro trial). Default 14. */
   trialDays?: number

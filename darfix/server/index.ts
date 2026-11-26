@@ -20,9 +20,19 @@ import {
 import {
   DEFAULT_TRIAL_DAYS,
   formatTechnicianCode,
+  isCheckoutPlan,
+  isTrialActive,
+  PLAN_LIMITS,
   planMaxTechnicians,
+  planPriceSar,
   trialEndsAt,
+  type PlanId,
 } from './plans'
+import {
+  getPaymentProvider,
+  paymentsMode,
+  publicAppBaseUrl,
+} from './payments'
 import { DEMO_PASSWORD, seedIfEmpty } from './seed'
 import { defaultChecklist, emptyProcess, type BookingProcess, type BookingStatus } from './types'
 
@@ -31,12 +41,82 @@ seedIfEmpty()
 
 const app = express()
 const PORT = Number(process.env.PORT || 8787)
-const JWT_FALLBACK_SECRET = process.env.DARFIX_SECRET || 'darfix-dev-secret'
 
-app.use(cors({ origin: true, credentials: true }))
+/**
+ * Session/app secret: env only in production/pilot; never a fixed fallback string in source.
+ * Local demo may generate an ephemeral secret for this process when unset.
+ */
+function resolveAppSecret(): string {
+  const fromEnv = process.env.DARFIX_SECRET || process.env.JWT_SECRET
+  if (fromEnv && fromEnv.trim()) return fromEnv.trim()
+  const requireSecret =
+    process.env.NODE_ENV === 'production' || process.env.DARFIX_REQUIRE_SECRET === '1'
+  if (requireSecret) {
+    console.error(
+      'FATAL: DARFIX_SECRET (or JWT_SECRET) is required when NODE_ENV=production or DARFIX_REQUIRE_SECRET=1',
+    )
+    process.exit(1)
+  }
+  const ephemeral = crypto.randomBytes(32).toString('hex')
+  console.warn(
+    '[darfix] DARFIX_SECRET unset — using ephemeral process secret (local demo only; never ship a fixed default)',
+  )
+  return ephemeral
+}
+const APP_SECRET = resolveAppSecret()
+void APP_SECRET // reserved for signed tokens / future JWT; must resolve at boot
+
+function corsOriginOption(): cors.CorsOptions['origin'] {
+  const list = (process.env.DARFIX_CORS_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (list.length) {
+    return (origin, callback) => {
+      if (!origin || list.includes(origin)) callback(null, true)
+      else callback(new Error('Not allowed by CORS'))
+    }
+  }
+  // Combined pilot / production without allowlist: same-origin only (SPA served by Express).
+  if (process.env.NODE_ENV === 'production' || process.env.DARFIX_REQUIRE_SECRET === '1') {
+    return false
+  }
+  // Local Vite + API: reflect request origin.
+  return true
+}
+
+app.use(cors({ origin: corsOriginOption(), credentials: true }))
 app.use(express.json({ limit: '8mb' }))
 
 type Authed = express.Request & { userId?: string; userRole?: string }
+
+/** Booking mutation capability for role-scoped checks. */
+type BookingAction =
+  | 'status'
+  | 'assign'
+  | 'photos'
+  | 'costs'
+  | 'report'
+  | 'extra_work'
+  | 'extra_work_respond'
+  | 'rate'
+  | 'process'
+  | 'tech_respond'
+  | 'gps'
+  | 'field' // generic field/ops mutation
+
+const CUSTOMER_ONLY_ACTIONS = new Set<BookingAction>(['rate', 'extra_work_respond'])
+const FIELD_ACTIONS = new Set<BookingAction>([
+  'status',
+  'photos',
+  'costs',
+  'report',
+  'extra_work',
+  'process',
+  'field',
+  'tech_respond',
+  'gps',
+])
 
 function auth(req: Authed, res: express.Response, next: express.NextFunction) {
   const header = req.headers.authorization
@@ -53,6 +133,104 @@ function auth(req: Authed, res: express.Response, next: express.NextFunction) {
   req.userId = user.id
   req.userRole = user.role
   next()
+}
+
+/**
+ * Role- and tenant-scoped booking authorization.
+ * - customer: own bookings only; customer-facing actions
+ * - technician: assigned bookings only; field updates (not customer-only)
+ * - provider / company: bookings for their organization_id
+ * - admin: full access
+ */
+function assertBookingAccess(
+  req: Authed,
+  booking: Record<string, unknown>,
+  action: BookingAction,
+): { ok: true } | { ok: false; status: number; error: string } {
+  const role = req.userRole || ''
+  const userId = req.userId
+  if (!userId) return { ok: false, status: 401, error: 'Unauthorized' }
+
+  if (role === 'admin') return { ok: true }
+
+  if (role === 'customer') {
+    if (booking.customer_id !== userId) {
+      return { ok: false, status: 403, error: 'Not your booking' }
+    }
+    if (FIELD_ACTIONS.has(action) && !CUSTOMER_ONLY_ACTIONS.has(action)) {
+      // Customers may cancel via status in some flows — allow only cancel/confirm-ish, not field ops
+      if (action === 'status') return { ok: true }
+      return { ok: false, status: 403, error: 'Customers cannot perform this action' }
+    }
+    return { ok: true }
+  }
+
+  if (role === 'technician') {
+    if (CUSTOMER_ONLY_ACTIONS.has(action)) {
+      return { ok: false, status: 403, error: 'Customers only' }
+    }
+    if (action === 'assign') {
+      return { ok: false, status: 403, error: 'Providers/admins only' }
+    }
+    if (booking.technician_id !== userId) {
+      return { ok: false, status: 403, error: 'Not your assigned job' }
+    }
+    return { ok: true }
+  }
+
+  if (role === 'provider') {
+    if (CUSTOMER_ONLY_ACTIONS.has(action)) {
+      return { ok: false, status: 403, error: 'Customers only' }
+    }
+    const myOrg = userOrgId(userId)
+    if (!myOrg) return { ok: false, status: 403, error: 'No organization' }
+    const bookingOrg = (booking.organization_id as string | null) || null
+    if (bookingOrg && bookingOrg !== myOrg) {
+      return { ok: false, status: 403, error: 'Booking not in your organization' }
+    }
+    // Unassigned marketplace jobs: provider may only touch if they have an open lead offer
+    if (!bookingOrg && action !== 'assign') {
+      const offer = db
+        .prepare(
+          `SELECT id FROM lead_offers WHERE booking_id = ? AND organization_id = ? AND status IN ('pending','accepted') LIMIT 1`,
+        )
+        .get(booking.id, myOrg) as { id: string } | undefined
+      if (!offer) {
+        return { ok: false, status: 403, error: 'Booking not in your organization' }
+      }
+    }
+    return { ok: true }
+  }
+
+  return { ok: false, status: 403, error: 'Forbidden' }
+}
+
+function requireBookingAccess(
+  req: Authed,
+  res: express.Response,
+  booking: Record<string, unknown> | undefined,
+  action: BookingAction,
+): booking is Record<string, unknown> {
+  if (!booking) {
+    res.status(404).json({ error: 'Not found' })
+    return false
+  }
+  const gate = assertBookingAccess(req, booking, action)
+  if (!gate.ok) {
+    res.status(gate.status).json({ error: gate.error })
+    return false
+  }
+  return true
+}
+
+function isFoundingAllowlistedEmail(email: string): boolean {
+  const raw = process.env.DARFIX_FOUNDING_EMAILS || ''
+  const allow = raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+  if (!allow.length) return false
+  return allow.includes(email.trim().toLowerCase())
 }
 
 function createSession(userId: string, opts?: { deviceLabel?: string; singleSession?: boolean }) {
@@ -368,7 +546,7 @@ function distributeLeadOffers(
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'darfix', secretHint: JWT_FALLBACK_SECRET.slice(0, 4) })
+  res.json({ ok: true, service: 'darfix' })
 })
 
 app.post('/api/auth/login', (req, res) => {
@@ -468,8 +646,7 @@ app.post('/api/auth/signup/provider', (req, res) => {
     serviceCityIds?: string[]
     priceApproverName?: string
     priceApproverPhone?: string
-    foundingPartner?: boolean
-    trialDays?: number
+    // foundingPartner / trialDays intentionally ignored — client cannot self-elevate
   }
   const {
     kind,
@@ -491,8 +668,6 @@ app.post('/api/auth/signup/provider', (req, res) => {
     serviceCityIds,
     priceApproverName,
     priceApproverPhone,
-    foundingPartner = false,
-    trialDays = DEFAULT_TRIAL_DAYS,
   } = body
 
   if (!kind || !name || !email || !phone || !password) {
@@ -528,19 +703,21 @@ app.post('/api/auth/signup/provider', (req, res) => {
     priceApproverPhone: priceApproverPhone ?? undefined,
     completedAt: now,
   }
-  const isFounding = Boolean(foundingPartner)
+  // Server-only elevation via DARFIX_FOUNDING_EMAILS allowlist (never trust client body).
+  const isFounding = isFoundingAllowlistedEmail(email)
+  const trialDays = isFounding ? DEFAULT_TRIAL_DAYS : null
   const plan = isFounding ? 'pro' : 'launch'
-  const trialEnd = isFounding ? trialEndsAt(new Date(), trialDays) : null
+  const trialEnd = isFounding ? trialEndsAt(new Date(), DEFAULT_TRIAL_DAYS) : null
 
   const create = db.transaction(() => {
     db.prepare(
       `INSERT INTO provider_organizations (
         id, kind, name, name_ar, city_id, phone, email,
         commercial_registration, license_number, status,
-        subscription_plan, founding_partner, service_city_ids,
+        subscription_plan, subscription_status, founding_partner, service_city_ids,
         trial_days, trial_ends_at, whatsapp, sla_hours, tech_count_declared,
         specialties, price_approver_name, price_approver_phone, onboarding_survey, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       orgId,
       kind,
@@ -552,6 +729,7 @@ app.post('/api/auth/signup/provider', (req, res) => {
       commercialRegistration ?? null,
       licenseNumber ?? null,
       plan,
+      isFounding ? 'trialing' : 'none',
       isFounding ? 1 : 0,
       JSON.stringify(cities),
       isFounding ? trialDays : null,
@@ -760,8 +938,12 @@ app.patch('/api/bookings/:id/status', auth, (req: Authed, res) => {
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking) return res.status(404).json({ error: 'Not found' })
+  if (!requireBookingAccess(req, res, booking, 'status')) return
+  // Customers may only cancel their own booking via this route
   const { status, note } = req.body as { status: BookingStatus; note?: string }
+  if (req.userRole === 'customer' && status !== 'cancelled') {
+    return res.status(403).json({ error: 'Customers may only cancel' })
+  }
   const now = new Date().toISOString()
   const history = JSON.parse((booking.status_history as string) || '[]') as {
     status: string
@@ -870,18 +1052,13 @@ app.post('/api/bookings/:id/assign', auth, (req: Authed, res) => {
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking) return res.status(404).json({ error: 'Not found' })
+  if (!requireBookingAccess(req, res, booking, 'assign')) return
 
   const isAdmin = req.userRole === 'admin'
   const isProvider = req.userRole === 'provider'
-  if (!isAdmin && !isProvider) return res.status(403).json({ error: 'Forbidden' })
 
   if (isProvider) {
     const myOrg = userOrgId(req.userId!)
-    if (!myOrg) return res.status(403).json({ error: 'No organization' })
-    if (booking.organization_id && booking.organization_id !== myOrg) {
-      return res.status(403).json({ error: 'Booking not in your organization' })
-    }
     if (organizationId && organizationId !== myOrg) {
       return res.status(403).json({ error: 'Cannot assign outside your organization' })
     }
@@ -1044,7 +1221,7 @@ app.post('/api/bookings/:id/photos', auth, (req: Authed, res) => {
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking) return res.status(404).json({ error: 'Not found' })
+  if (!requireBookingAccess(req, res, booking, 'photos')) return
   const photos = JSON.parse((booking.photos as string) || '[]') as unknown[]
   const incoming = (req.body as { photos: unknown[] }).photos || []
   const next = [...photos, ...incoming]
@@ -1064,7 +1241,7 @@ app.post('/api/bookings/:id/costs', auth, (req: Authed, res) => {
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking) return res.status(404).json({ error: 'Not found' })
+  if (!requireBookingAccess(req, res, booking, 'costs')) return
   const costs = JSON.parse((booking.costs as string) || '[]') as unknown[]
   const incoming = (req.body as { costs: unknown[] }).costs || []
   db.prepare(`UPDATE bookings SET costs = ?, updated_at = ? WHERE id = ?`).run(
@@ -1085,7 +1262,7 @@ app.post('/api/bookings/:id/report', auth, (req: Authed, res) => {
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking) return res.status(404).json({ error: 'Not found' })
+  if (!requireBookingAccess(req, res, booking, 'report')) return
   const history = JSON.parse((booking.status_history as string) || '[]') as object[]
   history.push({ status: 'completed', at: now, by: req.userId })
   const process: BookingProcess = {
@@ -1130,7 +1307,7 @@ app.post('/api/bookings/:id/extra-work', auth, (req: Authed, res) => {
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking) return res.status(404).json({ error: 'Not found' })
+  if (!requireBookingAccess(req, res, booking, 'extra_work')) return
   const now = new Date().toISOString()
   const extra = JSON.parse((booking.extra_work as string) || '[]') as object[]
   extra.push({ id: uid('ew'), description, amountSar, status: 'pending', createdAt: now })
@@ -1165,7 +1342,7 @@ app.post('/api/bookings/:id/extra-work/:extraId/respond', auth, (req: Authed, re
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking) return res.status(404).json({ error: 'Not found' })
+  if (!requireBookingAccess(req, res, booking, 'extra_work_respond')) return
   const extra = JSON.parse((booking.extra_work as string) || '[]') as {
     id: string
     description: string
@@ -1208,7 +1385,8 @@ app.post('/api/bookings/:id/rate', auth, (req: Authed, res) => {
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking || !booking.technician_id) return res.status(404).json({ error: 'Not found' })
+  if (!requireBookingAccess(req, res, booking, 'rate')) return
+  if (!booking.technician_id) return res.status(404).json({ error: 'Not found' })
   const now = new Date().toISOString()
   db.prepare(
     `UPDATE bookings SET rating = ?, review_text = ?, reviewed_at = ?, updated_at = ? WHERE id = ?`,
@@ -1239,7 +1417,7 @@ app.post('/api/bookings/:id/process/note', auth, (req: Authed, res) => {
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking) return res.status(404).json({ error: 'Not found' })
+  if (!requireBookingAccess(req, res, booking, 'process')) return
   const process: BookingProcess = {
     ...emptyProcess(),
     ...JSON.parse((booking.process as string) || '{}'),
@@ -1266,7 +1444,7 @@ app.patch('/api/bookings/:id/process/checklist', auth, (req: Authed, res) => {
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking) return res.status(404).json({ error: 'Not found' })
+  if (!requireBookingAccess(req, res, booking, 'process')) return
   const process: BookingProcess = {
     ...emptyProcess(),
     ...JSON.parse((booking.process as string) || '{}'),
@@ -1606,8 +1784,7 @@ app.post('/api/bookings/:id/tech-respond', auth, (req: Authed, res) => {
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking) return res.status(404).json({ error: 'Not found' })
-  if (booking.technician_id !== req.userId) return res.status(403).json({ error: 'Not your job' })
+  if (!requireBookingAccess(req, res, booking, 'tech_respond')) return
 
   const now = new Date().toISOString()
   if (accept) {
@@ -1654,9 +1831,7 @@ app.post('/api/bookings/:id/gps', auth, (req: Authed, res) => {
   const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
-  if (!booking || booking.technician_id !== req.userId) {
-    return res.status(404).json({ error: 'Not found' })
-  }
+  if (!requireBookingAccess(req, res, booking, 'gps')) return
   const process = {
     ...emptyProcess(),
     ...(JSON.parse((booking.process as string) || '{}') as BookingProcess),
@@ -1756,7 +1931,7 @@ app.post('/api/technicians/:id/toggle', auth, (req: Authed, res) => {
 
 /** Agent crew: propose sensitive actions (cancel, reassign, customer commitment). */
 app.post('/api/agent/approvals', auth, (req: Authed, res) => {
-  if (req.userRole !== 'admin' && req.userRole !== 'technician') {
+  if (req.userRole !== 'admin' && req.userRole !== 'technician' && req.userRole !== 'provider') {
     return res.status(403).json({ error: 'Forbidden' })
   }
   const body = req.body as {
@@ -1769,6 +1944,18 @@ app.post('/api/agent/approvals', auth, (req: Authed, res) => {
   if (!body.action || !body.rationale || !body.proposedBy) {
     return res.status(400).json({ error: 'action, rationale, proposedBy required' })
   }
+  if (body.bookingId) {
+    const booking = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(body.bookingId) as
+      | Record<string, unknown>
+      | undefined
+    if (!booking) return res.status(404).json({ error: 'Booking not found' })
+    if (req.userRole !== 'admin') {
+      const gate = assertBookingAccess(req, booking, 'field')
+      if (!gate.ok) return res.status(gate.status).json({ error: gate.error })
+    }
+  } else if (req.userRole !== 'admin') {
+    return res.status(400).json({ error: 'bookingId required for non-admin proposals' })
+  }
   const id = uid('apr')
   const now = new Date().toISOString()
   db.prepare(
@@ -1780,7 +1967,7 @@ app.post('/api/agent/approvals', auth, (req: Authed, res) => {
     body.bookingId ?? null,
     JSON.stringify(body.payload || {}),
     body.rationale,
-    body.proposedBy,
+    req.userId!, // bind proposer to authenticated user — ignore spoofed proposedBy for auth
     now,
   )
   res.status(201).json({
@@ -1790,7 +1977,7 @@ app.post('/api/agent/approvals', auth, (req: Authed, res) => {
       bookingId: body.bookingId ?? null,
       payload: body.payload || {},
       rationale: body.rationale,
-      proposedBy: body.proposedBy,
+      proposedBy: req.userId,
       status: 'pending',
       createdAt: now,
     },
@@ -2080,15 +2267,368 @@ app.get('/api/org/seats', auth, (req: Authed, res) => {
   if (!org) return res.status(404).json({ error: 'Not found' })
   const max = planMaxTechnicians(org.subscription_plan as string)
   const used = countActiveTechnicianSeats(orgId)
+  const trialEnds = (org.trial_ends_at as string) || null
+  const status = (org.subscription_status as string) || 'none'
+  const paywall =
+    status !== 'active' &&
+    !isTrialActive(trialEnds) &&
+    (status === 'trialing' || status === 'past_due' || Boolean(org.founding_partner))
   res.json({
     organizationId: orgId,
     plan: org.subscription_plan,
+    subscriptionStatus: status,
     used,
     max,
     trialDays: org.trial_days ?? null,
-    trialEndsAt: org.trial_ends_at ?? null,
+    trialEndsAt: trialEnds,
     atLimit: max !== null && used >= max,
+    paywall,
+    paymentsProvider: paymentsMode(),
   })
+})
+
+function activateOrgSubscription(orgId: string, planId: PlanId, checkoutId?: string) {
+  const now = new Date().toISOString()
+  db.prepare(
+    `UPDATE provider_organizations SET
+      subscription_plan = ?,
+      subscription_status = 'active',
+      trial_ends_at = NULL
+     WHERE id = ?`,
+  ).run(planId, orgId)
+  if (checkoutId) {
+    db.prepare(
+      `UPDATE subscription_checkouts SET status = 'paid', paid_at = ? WHERE id = ? AND status = 'pending'`,
+    ).run(now, checkoutId)
+  }
+  return mapOrganization(
+    db.prepare(`SELECT * FROM provider_organizations WHERE id = ?`).get(orgId) as Record<
+      string,
+      unknown
+    >,
+  )
+}
+
+function findCheckoutByExternal(externalId: string) {
+  return db
+    .prepare(`SELECT * FROM subscription_checkouts WHERE external_id = ?`)
+    .get(externalId) as Record<string, unknown> | undefined
+}
+
+/** Public plan catalog for checkout UI (no secrets). */
+app.get('/api/subscription/plans', (_req, res) => {
+  res.json({
+    currency: 'SAR',
+    methods: ['mada', 'visa', 'mastercard'],
+    paymentsProvider: paymentsMode(),
+    note:
+      'Fees settle to the DARFIX platform merchant account. Partners do not upload CR into DARFIX for subscription payment.',
+    plans: (Object.keys(PLAN_LIMITS) as PlanId[]).map((id) => ({
+      id,
+      ...PLAN_LIMITS[id],
+      checkoutEnabled: isCheckoutPlan(id),
+    })),
+  })
+})
+
+/** Current org subscription + paywall hint. */
+app.get('/api/org/subscription', auth, (req: Authed, res) => {
+  if (req.userRole !== 'provider' && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Providers only' })
+  }
+  const orgId =
+    req.userRole === 'admin'
+      ? (req.query.organizationId as string | undefined)
+      : userOrgId(req.userId!)
+  if (!orgId) return res.status(400).json({ error: 'No organization' })
+  const org = db.prepare(`SELECT * FROM provider_organizations WHERE id = ?`).get(orgId) as
+    | Record<string, unknown>
+    | undefined
+  if (!org) return res.status(404).json({ error: 'Not found' })
+  const trialEnds = (org.trial_ends_at as string) || null
+  const status = (org.subscription_status as string) || 'none'
+  const paywall =
+    status !== 'active' &&
+    !isTrialActive(trialEnds) &&
+    (status === 'trialing' || status === 'past_due' || Boolean(org.founding_partner))
+  const pending = db
+    .prepare(
+      `SELECT * FROM subscription_checkouts
+       WHERE organization_id = ? AND status = 'pending'
+       ORDER BY created_at DESC LIMIT 5`,
+    )
+    .all(orgId) as Record<string, unknown>[]
+  res.json({
+    organization: mapOrganization(org),
+    subscriptionStatus: status,
+    plan: org.subscription_plan,
+    trialEndsAt: trialEnds,
+    trialActive: isTrialActive(trialEnds),
+    paywall,
+    paymentsProvider: paymentsMode(),
+    methods: ['mada', 'visa', 'mastercard'],
+    checkoutPlans: CHECKOUT_PLAN_PAYLOAD(),
+    pendingCheckouts: pending.map(mapCheckoutRow),
+  })
+})
+
+function CHECKOUT_PLAN_PAYLOAD() {
+  return (['growth', 'pro', 'business'] as PlanId[]).map((id) => ({
+    id,
+    ...PLAN_LIMITS[id],
+  }))
+}
+
+function mapCheckoutRow(row: Record<string, unknown>) {
+  return {
+    id: row.id as string,
+    organizationId: row.organization_id as string,
+    planId: row.plan_id as string,
+    amountSar: row.amount_sar as number,
+    currency: (row.currency as string) || 'SAR',
+    provider: row.provider as string,
+    externalId: (row.external_id as string) || null,
+    checkoutUrl: (row.checkout_url as string) || null,
+    status: row.status as string,
+    createdAt: row.created_at as string,
+    paidAt: (row.paid_at as string) || null,
+  }
+}
+
+/**
+ * Start subscription checkout for Growth / Pro / Business.
+ * Moyasar when MOYASAR_SECRET_KEY is set; otherwise mock (simulate endpoint).
+ */
+app.post('/api/org/subscription/checkout', auth, async (req: Authed, res) => {
+  if (req.userRole !== 'provider' && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Providers only' })
+  }
+  const orgId =
+    req.userRole === 'admin' && req.body?.organizationId
+      ? String(req.body.organizationId)
+      : userOrgId(req.userId!)
+  if (!orgId) return res.status(400).json({ error: 'No organization' })
+  const planId = String(req.body?.planId || '')
+  if (!isCheckoutPlan(planId)) {
+    return res.status(400).json({
+      error: 'Choose Growth, Pro, or Business. Launch is free; Enterprise is sales-assisted.',
+    })
+  }
+  const amountSar = planPriceSar(planId)
+  if (amountSar == null || amountSar <= 0) {
+    return res.status(400).json({ error: 'Plan is not self-serve checkout' })
+  }
+  const org = db.prepare(`SELECT * FROM provider_organizations WHERE id = ?`).get(orgId) as
+    | Record<string, unknown>
+    | undefined
+  if (!org) return res.status(404).json({ error: 'Organization not found' })
+
+  const checkoutId = uid('chk')
+  const host = req.get('host')
+  const base = publicAppBaseUrl(host)
+  const successUrl = `${base}/provider/billing?paid=1&checkout=${checkoutId}`
+  const backUrl = `${base}/provider/billing`
+  const callbackUrl = `${base}/api/payments/moyasar/callback?checkout=${checkoutId}`
+
+  const provider = getPaymentProvider()
+  try {
+    const created = await provider.createSubscriptionCheckout({
+      checkoutId,
+      organizationId: orgId,
+      organizationName: String(org.name),
+      planId,
+      planLabel: PLAN_LIMITS[planId].labelEn,
+      amountSar,
+      successUrl,
+      backUrl,
+      callbackUrl,
+    })
+
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO subscription_checkouts (
+        id, organization_id, plan_id, amount_sar, currency, provider,
+        external_id, checkout_url, status, created_by, created_at, metadata
+      ) VALUES (?, ?, ?, ?, 'SAR', ?, ?, ?, 'pending', ?, ?, ?)`,
+    ).run(
+      checkoutId,
+      orgId,
+      planId,
+      amountSar,
+      created.provider,
+      created.externalId,
+      created.checkoutUrl,
+      req.userId ?? null,
+      now,
+      JSON.stringify({ methods: ['mada', 'visa', 'mastercard'] }),
+    )
+
+    res.status(201).json({
+      checkout: mapCheckoutRow(
+        db.prepare(`SELECT * FROM subscription_checkouts WHERE id = ?`).get(checkoutId) as Record<
+          string,
+          unknown
+        >,
+      ),
+      methods: ['mada', 'visa', 'mastercard'],
+      paymentsProvider: created.provider,
+      publishableKey:
+        created.provider === 'moyasar' ? process.env.MOYASAR_PUBLISHABLE_KEY || null : null,
+      simulateAvailable: created.provider === 'mock',
+      note:
+        created.provider === 'mock'
+          ? 'Mock mode — call POST /api/org/subscription/checkout/:id/simulate to mark paid.'
+          : 'Hosted Moyasar page accepts Mada, Visa, Mastercard. Settlement → platform merchant IBAN.',
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Checkout failed'
+    return res.status(502).json({ error: message })
+  }
+})
+
+/** Mock-only: mark checkout paid and activate plan (local/dev smoke). */
+app.post('/api/org/subscription/checkout/:id/simulate', auth, (req: Authed, res) => {
+  if (req.userRole !== 'provider' && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Providers only' })
+  }
+  // Never allow simulate when a real PSP is configured, even if the row says mock.
+  if (paymentsMode() !== 'mock') {
+    return res.status(403).json({ error: 'Simulate disabled outside mock payment mode' })
+  }
+  const row = db
+    .prepare(`SELECT * FROM subscription_checkouts WHERE id = ?`)
+    .get(req.params.id) as Record<string, unknown> | undefined
+  if (!row) return res.status(404).json({ error: 'Checkout not found' })
+  if (row.provider !== 'mock') {
+    return res.status(400).json({ error: 'Simulate only available for mock checkouts' })
+  }
+  const orgId = userOrgId(req.userId!)
+  if (req.userRole !== 'admin' && row.organization_id !== orgId) {
+    return res.status(403).json({ error: 'Not your organization' })
+  }
+  if (row.status === 'paid') {
+    return res.json({
+      alreadyPaid: true,
+      organization: mapOrganization(
+        db
+          .prepare(`SELECT * FROM provider_organizations WHERE id = ?`)
+          .get(row.organization_id as string) as Record<string, unknown>,
+      ),
+      checkout: mapCheckoutRow(row),
+    })
+  }
+  const organization = activateOrgSubscription(
+    row.organization_id as string,
+    row.plan_id as PlanId,
+    row.id as string,
+  )
+  notify({
+    userId: req.userId!,
+    type: 'booking_confirmed',
+    titleEn: 'Subscription active',
+    titleAr: 'الاشتراك نشط',
+    bodyEn: `Your ${PLAN_LIMITS[row.plan_id as PlanId]?.labelEn || row.plan_id} plan is now active.`,
+    bodyAr: `باقة ${row.plan_id} أصبحتّلة الآن.`,
+  })
+  res.json({
+    ok: true,
+    organization,
+    checkout: mapCheckoutRow(
+      db.prepare(`SELECT * FROM subscription_checkouts WHERE id = ?`).get(row.id as string) as Record<
+        string,
+        unknown
+      >,
+    ),
+  })
+})
+
+/**
+ * Moyasar invoice callback / webhook.
+ * Activates plan when invoice/payment is paid. Idempotent.
+ */
+app.post('/api/payments/moyasar/webhook', async (req, res) => {
+  const payload = req.body || {}
+  const data = (payload.data || payload) as Record<string, unknown>
+  const meta = (data.metadata || {}) as Record<string, string>
+  const externalId = String(data.id || payload.id || '')
+  const status = String(data.status || payload.status || '')
+  const checkoutId = meta.darfix_checkout_id || String(req.query.checkout || '')
+
+  let row: Record<string, unknown> | undefined
+  if (checkoutId) {
+    row = db.prepare(`SELECT * FROM subscription_checkouts WHERE id = ?`).get(checkoutId) as
+      | Record<string, unknown>
+      | undefined
+  }
+  if (!row && externalId) row = findCheckoutByExternal(externalId)
+  if (!row) {
+    return res.status(404).json({ error: 'Checkout not found' })
+  }
+
+  const paid =
+    status === 'paid' ||
+    String(payload.type || '').includes('paid') ||
+    String(data.status || '') === 'paid'
+
+  if (!paid) {
+    return res.json({ ok: true, ignored: true, status })
+  }
+
+  if (row.status === 'paid') {
+    return res.json({ ok: true, alreadyPaid: true })
+  }
+
+  // Optional live verify when Moyasar keys present
+  const provider = getPaymentProvider()
+  if (provider.name === 'moyasar' && row.external_id && provider.fetchCheckoutStatus) {
+    try {
+      const remote = await provider.fetchCheckoutStatus(String(row.external_id))
+      if (!remote.paid) {
+        return res.json({ ok: true, ignored: true, remoteStatus: remote.status })
+      }
+    } catch {
+      // Fall through to webhook claim if fetch fails (network); still require paid flag above.
+    }
+  }
+
+  activateOrgSubscription(row.organization_id as string, row.plan_id as PlanId, row.id as string)
+  res.json({ ok: true, activated: true, planId: row.plan_id })
+})
+
+/** Redirect/callback target after Moyasar hosted invoice (GET). */
+app.get('/api/payments/moyasar/callback', async (req, res) => {
+  const checkoutId = String(req.query.checkout || '')
+  const invoiceId = String(req.query.id || req.query.invoice_id || '')
+  let row: Record<string, unknown> | undefined
+  if (checkoutId) {
+    row = db.prepare(`SELECT * FROM subscription_checkouts WHERE id = ?`).get(checkoutId) as
+      | Record<string, unknown>
+      | undefined
+  }
+  if (!row && invoiceId) row = findCheckoutByExternal(invoiceId)
+
+  const base = publicAppBaseUrl(req.get('host'))
+  if (!row) {
+    return res.redirect(`${base}/provider/billing?error=checkout_not_found`)
+  }
+
+  if (row.status !== 'paid') {
+    const provider = getPaymentProvider()
+    let paid = false
+    if (provider.name === 'moyasar' && row.external_id && provider.fetchCheckoutStatus) {
+      try {
+        const remote = await provider.fetchCheckoutStatus(String(row.external_id))
+        paid = remote.paid
+      } catch {
+        paid = false
+      }
+    }
+    if (paid) {
+      activateOrgSubscription(row.organization_id as string, row.plan_id as PlanId, row.id as string)
+    }
+  }
+
+  return res.redirect(`${base}/provider/billing?checkout=${row.id}&paid=1`)
 })
 
 /** Seasonal campaign suggestions (human approval required — never auto-publish ads). */
