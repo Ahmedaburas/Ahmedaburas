@@ -5,7 +5,7 @@ export type UserRole = 'customer' | 'technician' | 'admin' | 'provider'
 export type ProviderKind = 'company' | 'independent'
 export type EmploymentType = 'independent' | 'company'
 export type AssignmentMode = 'named_tech' | 'company_pool'
-export type OrgMemberRole = 'owner' | 'dispatcher' | 'technician'
+export type OrgMemberRole = 'owner' | 'dispatcher' | 'price_approver' | 'technician'
 
 /** Proposed partner subscription ladder (SAR/mo) — not validated pricing. */
 export type SubscriptionPlan = 'launch' | 'growth' | 'pro' | 'business' | 'enterprise'
@@ -43,6 +43,18 @@ export interface ProviderOrganization {
   status: 'active' | 'pending_review' | 'suspended'
   subscriptionPlan?: SubscriptionPlan
   foundingPartner?: boolean
+  /** Free trial length in days (Founding / Pro trial). Default 14. */
+  trialDays?: number
+  trialEndsAt?: string
+  whatsapp?: string
+  /** Partner SLA response window in hours. */
+  slaHours?: number
+  /** Declared tech headcount from onboarding survey. */
+  techCountDeclared?: number
+  specialties?: ServiceCategoryId[]
+  priceApproverName?: string
+  priceApproverPhone?: string
+  onboardingSurvey?: Record<string, unknown>
   createdAt: string
 }
 
@@ -106,6 +118,9 @@ export interface User {
   /** Set for technicians (and provider owners who also field). */
   employmentType?: EmploymentType
   organizationId?: string
+  /** Human-readable unique tech ID, e.g. DFX-JUB-00042. Bound 1:1 to this account. */
+  technicianCode?: string
+  lastActiveAt?: string
 }
 
 export interface BookingAddress {
@@ -274,6 +289,10 @@ export const SUBSCRIPTION_PLANS: {
   priceLabelAr: string
   nameEn: string
   nameAr: string
+  /** Active technician seats; null = unlimited (Enterprise). */
+  maxTechnicians: number | null
+  seatsLabelEn: string
+  seatsLabelAr: string
 }[] = [
   {
     id: 'launch',
@@ -282,6 +301,9 @@ export const SUBSCRIPTION_PLANS: {
     priceLabelAr: 'مجاني',
     nameEn: 'Launch',
     nameAr: 'إطلاق',
+    maxTechnicians: 1,
+    seatsLabelEn: '1 technician seat',
+    seatsLabelAr: 'مقعد فني واحد',
   },
   {
     id: 'growth',
@@ -290,6 +312,9 @@ export const SUBSCRIPTION_PLANS: {
     priceLabelAr: '١٤٩ ر.س/شهر',
     nameEn: 'Growth',
     nameAr: 'نمو',
+    maxTechnicians: 3,
+    seatsLabelEn: '3 technician seats',
+    seatsLabelAr: '٣ مقاعد فنيين',
   },
   {
     id: 'pro',
@@ -298,6 +323,9 @@ export const SUBSCRIPTION_PLANS: {
     priceLabelAr: '٣٩٩ ر.س/شهر',
     nameEn: 'Pro',
     nameAr: 'احترافي',
+    maxTechnicians: 10,
+    seatsLabelEn: '10 technician seats',
+    seatsLabelAr: '١٠ مقاعد فنيين',
   },
   {
     id: 'business',
@@ -306,6 +334,9 @@ export const SUBSCRIPTION_PLANS: {
     priceLabelAr: '٧٩٩ ر.س/شهر',
     nameEn: 'Business',
     nameAr: 'أعمال',
+    maxTechnicians: 25,
+    seatsLabelEn: '25 technician seats',
+    seatsLabelAr: '٢٥ مقعد فنيين',
   },
   {
     id: 'enterprise',
@@ -314,8 +345,14 @@ export const SUBSCRIPTION_PLANS: {
     priceLabelAr: '١٬٥٠٠–٣٬٥٠٠+ ر.س/شهر',
     nameEn: 'Enterprise',
     nameAr: 'مؤسسات',
+    maxTechnicians: null,
+    seatsLabelEn: 'Unlimited seats',
+    seatsLabelAr: 'مقاعد غير محدودة',
   },
 ]
+
+/** Default Founding Partner free trial (days). Env override: DARFIX_TRIAL_DAYS. */
+export const DEFAULT_TRIAL_DAYS = 14
 
 export const TIME_SLOTS = [
   { id: '08-10', labelEn: '8:00 – 10:00 AM', labelAr: '٨:٠٠ – ١٠:٠٠ ص' },

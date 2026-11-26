@@ -51,8 +51,11 @@ export function Partners() {
               <p className={`mt-3 text-2xl font-extrabold ${plan.id === 'pro' ? 'text-white' : 'text-navy-900'}`}>
                 {locale === 'ar' ? plan.priceLabelAr : plan.priceLabelEn}
               </p>
+              <p className={`mt-2 text-xs ${plan.id === 'pro' ? 'text-teal-200/80' : 'text-navy-700/55'}`}>
+                {locale === 'ar' ? plan.seatsLabelAr : plan.seatsLabelEn}
+              </p>
               {plan.id === 'pro' && (
-                <p className="mt-2 text-xs text-white/60">Most partners start here</p>
+                <p className="mt-2 text-xs text-white/60">Most partners start here · 14-day trial</p>
               )}
             </div>
           ))}

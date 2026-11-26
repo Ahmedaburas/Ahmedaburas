@@ -25,8 +25,17 @@ export function ProviderSignup() {
     companyName: '',
     commercialRegistration: '',
     licenseNumber: '',
+    whatsapp: '',
+    slaHours: '4',
+    techCount: '3',
+    priceApproverName: '',
+    priceApproverPhone: '',
     plumbing: true,
     electrical: false,
+    cityKhobar: true,
+    cityDhahran: false,
+    cityDammam: false,
+    cityJubail: false,
   })
   const [error, setError] = useState('')
 
@@ -40,10 +49,18 @@ export function ProviderSignup() {
     const specialties: ServiceCategoryId[] = []
     if (form.plumbing) specialties.push('plumbing')
     if (form.electrical) specialties.push('electrical')
-    if (kind === 'independent' && specialties.length === 0) {
+    if (specialties.length === 0) {
       setError(t('selectService'))
       return
     }
+
+    const serviceCityIds = [
+      form.cityKhobar && 'khobar',
+      form.cityDhahran && 'dhahran',
+      form.cityDammam && 'dammam',
+      form.cityJubail && 'jubail',
+    ].filter(Boolean) as string[]
+    if (serviceCityIds.length === 0) serviceCityIds.push(form.cityId)
 
     const result = await actions.signupProvider({
       kind,
@@ -57,6 +74,12 @@ export function ProviderSignup() {
       companyName: kind === 'company' ? form.companyName : undefined,
       commercialRegistration: form.commercialRegistration || undefined,
       licenseNumber: form.licenseNumber || undefined,
+      whatsapp: form.whatsapp || form.phone,
+      slaHours: Number(form.slaHours) || undefined,
+      techCount: Number(form.techCount) || undefined,
+      serviceCityIds,
+      priceApproverName: form.priceApproverName || undefined,
+      priceApproverPhone: form.priceApproverPhone || undefined,
     })
     if ('error' in result) {
       setError(result.error)
@@ -194,29 +217,98 @@ export function ProviderSignup() {
             </div>
           </div>
 
-          {kind === 'independent' && (
-            <div>
-              <p className="label-text mb-2">{t('specialties')}</p>
-              <div className="flex flex-wrap gap-4 text-sm">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.plumbing}
-                    onChange={(e) => setForm({ ...form, plumbing: e.target.checked })}
-                  />
-                  {t('plumbing')}
-                </label>
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.electrical}
-                    onChange={(e) => setForm({ ...form, electrical: e.target.checked })}
-                  />
-                  {t('electrical')}
-                </label>
+          <div>
+            <p className="label-text mb-2">{t('specialties')}</p>
+            <div className="flex flex-wrap gap-4 text-sm">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.plumbing}
+                  onChange={(e) => setForm({ ...form, plumbing: e.target.checked })}
+                />
+                {t('plumbing')}
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.electrical}
+                  onChange={(e) => setForm({ ...form, electrical: e.target.checked })}
+                />
+                {t('electrical')}
+              </label>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-navy-100 bg-sand-50/80 p-4">
+            <p className="text-sm font-semibold text-navy-900">{t('capacitySurvey')}</p>
+            <p className="mt-1 text-xs text-navy-700/55">{t('orgRolesHint')}</p>
+            <div className="mt-3">
+              <p className="label-text mb-2">{t('serviceCities')}</p>
+              <div className="flex flex-wrap gap-3 text-sm">
+                {(
+                  [
+                    ['cityKhobar', 'Khobar'],
+                    ['cityDhahran', 'Dhahran'],
+                    ['cityDammam', 'Dammam'],
+                    ['cityJubail', 'Jubail'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label key={key} className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form[key]}
+                      onChange={(e) => setForm({ ...form, [key]: e.target.checked })}
+                    />
+                    {label}
+                  </label>
+                ))}
               </div>
             </div>
-          )}
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="label-text">{t('whatsappBusiness')}</label>
+                <input
+                  className="input-field"
+                  placeholder="05XXXXXXXX"
+                  value={form.whatsapp}
+                  onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label-text">{t('slaHours')}</label>
+                <input
+                  className="input-field"
+                  type="number"
+                  min={1}
+                  max={48}
+                  value={form.slaHours}
+                  onChange={(e) => setForm({ ...form, slaHours: e.target.value })}
+                />
+              </div>
+              {kind === 'company' && (
+                <>
+                  <div>
+                    <label className="label-text">{t('techHeadcount')}</label>
+                    <input
+                      className="input-field"
+                      type="number"
+                      min={1}
+                      value={form.techCount}
+                      onChange={(e) => setForm({ ...form, techCount: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="label-text">{t('priceApprover')}</label>
+                    <input
+                      className="input-field"
+                      value={form.priceApproverName}
+                      onChange={(e) => setForm({ ...form, priceApproverName: e.target.value })}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             {kind === 'company' && (

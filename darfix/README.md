@@ -52,7 +52,7 @@ Password: `demo123`
 | Partner (Dammam Fix Pros) | `dammam@darfix.sa` |
 | Admin | `admin@darfix.sa` |
 
-Partner pricing (proposed): Launch free · Growth 149 · Pro 399 · Business 799 · Enterprise 1500–3500+ SAR/mo. Founding 20: 90 days Pro free, then 299 for 12 months.
+Partner pricing (proposed): Launch free (1 seat) · Growth 149 (3) · Pro 399 (10) · Business 799 (25) · Enterprise 1500–3500+ (unlimited) SAR/mo. Founding 20: **14-day** Pro free trial (env `DARFIX_TRIAL_DAYS`, suggest 7–14), then 299 for 12 months.
 
 ## Stack
 

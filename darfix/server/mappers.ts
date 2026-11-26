@@ -21,6 +21,8 @@ export function mapUser(row: Row, includePassword = false) {
     avatarColor: (row.avatar_color as string) || undefined,
     employmentType: (row.employment_type as string) || undefined,
     organizationId: (row.organization_id as string) || undefined,
+    technicianCode: (row.technician_code as string) || undefined,
+    lastActiveAt: (row.last_active_at as string) || undefined,
   }
 }
 
@@ -47,6 +49,31 @@ export function mapOrganization(row: Row) {
     status: row.status as string,
     subscriptionPlan: ((row.subscription_plan as string) || 'launch') as string,
     foundingPartner: Boolean(row.founding_partner),
+    trialDays: (row.trial_days as number) ?? undefined,
+    trialEndsAt: (row.trial_ends_at as string) || undefined,
+    whatsapp: (row.whatsapp as string) || undefined,
+    slaHours: (row.sla_hours as number) ?? undefined,
+    techCountDeclared: (row.tech_count_declared as number) ?? undefined,
+    specialties: row.specialties
+      ? (() => {
+          try {
+            return JSON.parse(row.specialties as string) as string[]
+          } catch {
+            return undefined
+          }
+        })()
+      : undefined,
+    priceApproverName: (row.price_approver_name as string) || undefined,
+    priceApproverPhone: (row.price_approver_phone as string) || undefined,
+    onboardingSurvey: row.onboarding_survey
+      ? (() => {
+          try {
+            return JSON.parse(row.onboarding_survey as string) as Record<string, unknown>
+          } catch {
+            return undefined
+          }
+        })()
+      : undefined,
     createdAt: row.created_at as string,
   }
 }

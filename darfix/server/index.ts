@@ -2,6 +2,9 @@ import bcrypt from 'bcryptjs'
 import cors from 'cors'
 import express from 'express'
 import crypto from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { db, migrate, uid } from './db'
 import {
   mapBooking,
@@ -14,6 +17,12 @@ import {
   mapQuotation,
   mapUser,
 } from './mappers'
+import {
+  DEFAULT_TRIAL_DAYS,
+  formatTechnicianCode,
+  planMaxTechnicians,
+  trialEndsAt,
+} from './plans'
 import { DEMO_PASSWORD, seedIfEmpty } from './seed'
 import { defaultChecklist, emptyProcess, type BookingProcess, type BookingStatus } from './types'
 
@@ -46,17 +55,63 @@ function auth(req: Authed, res: express.Response, next: express.NextFunction) {
   next()
 }
 
-function createSession(userId: string) {
+function createSession(userId: string, opts?: { deviceLabel?: string; singleSession?: boolean }) {
   const token = crypto.randomBytes(32).toString('hex')
   const created = new Date()
   const expires = new Date(created.getTime() + 7 * 86400000)
-  db.prepare(`INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)`).run(
-    token,
-    userId,
-    created.toISOString(),
-    expires.toISOString(),
-  )
+  if (opts?.singleSession) {
+    db.prepare(`DELETE FROM sessions WHERE user_id = ?`).run(userId)
+  }
+  db.prepare(
+    `INSERT INTO sessions (token, user_id, created_at, expires_at, device_label) VALUES (?, ?, ?, ?, ?)`,
+  ).run(token, userId, created.toISOString(), expires.toISOString(), opts?.deviceLabel ?? null)
+  db.prepare(`UPDATE users SET last_active_at = ? WHERE id = ?`).run(created.toISOString(), userId)
   return token
+}
+
+function nextTechnicianCode(cityId: string): string {
+  const prefix = `DFX-${cityId === 'khobar' ? 'KHB' : cityId === 'dhahran' ? 'DHR' : cityId === 'dammam' ? 'DMM' : cityId === 'jubail' ? 'JUB' : 'EP'}-`
+  const rows = db
+    .prepare(`SELECT technician_code FROM users WHERE technician_code LIKE ?`)
+    .all(`${prefix}%`) as { technician_code: string }[]
+  let max = 0
+  for (const r of rows) {
+    const n = Number(r.technician_code.split('-').pop())
+    if (!Number.isNaN(n) && n > max) max = n
+  }
+  return formatTechnicianCode(cityId, max + 1)
+}
+
+function countActiveTechnicianSeats(organizationId: string): number {
+  // Seat = active user with role technician bound to this org (1 account = 1 seat).
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM users
+       WHERE organization_id = ? AND role = 'technician' AND active = 1`,
+    )
+    .get(organizationId) as { c: number }
+  return row?.c ?? 0
+}
+
+function assertOrgSeatAvailable(organizationId: string) {
+  const org = db.prepare(`SELECT * FROM provider_organizations WHERE id = ?`).get(organizationId) as
+    | Record<string, unknown>
+    | undefined
+  if (!org) return { ok: false as const, error: 'Organization not found', status: 404 }
+  const max = planMaxTechnicians(org.subscription_plan as string)
+  if (max === null) return { ok: true as const, org, max, used: countActiveTechnicianSeats(organizationId) }
+  const used = countActiveTechnicianSeats(organizationId)
+  if (used >= max) {
+    return {
+      ok: false as const,
+      error: `Technician seat limit reached (${used}/${max}). Upgrade your plan for more seats.`,
+      status: 403,
+      org,
+      max,
+      used,
+    }
+  }
+  return { ok: true as const, org, max, used }
 }
 
 function notify(input: {
@@ -116,7 +171,7 @@ function userOrgId(userId: string): string | undefined {
 }
 
 function loadBootstrap(userId: string, role: string, locale: 'en' | 'ar') {
-  const users = db
+  let users = db
     .prepare(`SELECT * FROM users`)
     .all()
     .map((u) => mapUser(u as Record<string, unknown>))
@@ -182,10 +237,20 @@ function loadBootstrap(userId: string, role: string, locale: 'en' | 'ar') {
     const orgId = userOrgId(userId)
     visibleOrgs = organizations.filter((o) => o.id === orgId)
     visibleMembers = organizationMembers.filter((m) => m.organizationId === orgId)
+    const memberUserIds = new Set(visibleMembers.map((m) => m.userId))
+    const bookingCustomerIds = new Set(bookings.map((b) => b.customerId))
+    users = users.filter(
+      (u) => u.id === userId || memberUserIds.has(u.id) || bookingCustomerIds.has(u.id),
+    )
   } else if (role === 'technician') {
     const orgId = userOrgId(userId)
     visibleOrgs = organizations.filter((o) => o.id === orgId)
     visibleMembers = organizationMembers.filter((m) => m.organizationId === orgId)
+    const memberUserIds = new Set(visibleMembers.map((m) => m.userId))
+    const bookingCustomerIds = new Set(bookings.map((b) => b.customerId))
+    users = users.filter(
+      (u) => u.id === userId || memberUserIds.has(u.id) || bookingCustomerIds.has(u.id),
+    )
   } else if (role === 'customer') {
     // Customers see active partners for match/choose UX + orgs on their bookings
     const linked = new Set(bookings.map((b) => b.organizationId).filter(Boolean) as string[])
@@ -194,6 +259,10 @@ function loadBootstrap(userId: string, role: string, locale: 'en' | 'ar') {
     )
     visibleMembers = organizationMembers.filter((m) =>
       visibleOrgs.some((o) => o.id === m.organizationId),
+    )
+    const techIds = new Set(bookings.map((b) => b.technicianId).filter(Boolean) as string[])
+    users = users.filter(
+      (u) => u.id === userId || techIds.has(u.id) || (u.role === 'technician' && u.active !== false),
     )
   }
 
@@ -303,7 +372,11 @@ app.get('/api/health', (_req, res) => {
 })
 
 app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body as { email?: string; password?: string }
+  const { email, password, deviceLabel } = req.body as {
+    email?: string
+    password?: string
+    deviceLabel?: string
+  }
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' })
   const row = db.prepare(`SELECT * FROM users WHERE lower(email) = lower(?)`).get(email) as
     | Record<string, unknown>
@@ -311,8 +384,30 @@ app.post('/api/auth/login', (req, res) => {
   if (!row || !bcrypt.compareSync(password, row.password_hash as string)) {
     return res.status(401).json({ error: 'Invalid email or password' })
   }
-  const token = createSession(row.id as string)
-  res.json({ token, user: mapUser(row) })
+  const isTech = row.role === 'technician'
+  const priorSessions = isTech
+    ? (
+        db.prepare(`SELECT COUNT(*) AS c FROM sessions WHERE user_id = ? AND expires_at > ?`).get(
+          row.id,
+          new Date().toISOString(),
+        ) as { c: number }
+      ).c
+    : 0
+  const token = createSession(row.id as string, {
+    deviceLabel,
+    singleSession: isTech,
+  })
+  const user = mapUser(
+    db.prepare(`SELECT * FROM users WHERE id = ?`).get(row.id as string) as Record<string, unknown>,
+  )
+  res.json({
+    token,
+    user,
+    sessionNotice:
+      isTech && priorSessions > 0
+        ? 'Previous technician sessions were signed out (single-device seat policy).'
+        : undefined,
+  })
 })
 
 app.post('/api/auth/signup', (req, res) => {
@@ -351,7 +446,7 @@ app.post('/api/auth/signup', (req, res) => {
   res.status(201).json({ token, user })
 })
 
-/** Independent technician or maintenance company onboarding. */
+/** Independent technician or maintenance company onboarding (+ capacity survey). */
 app.post('/api/auth/signup/provider', (req, res) => {
   const body = req.body as {
     kind?: 'independent' | 'company'
@@ -367,6 +462,14 @@ app.post('/api/auth/signup/provider', (req, res) => {
     companyNameAr?: string
     commercialRegistration?: string
     licenseNumber?: string
+    whatsapp?: string
+    slaHours?: number
+    techCount?: number
+    serviceCityIds?: string[]
+    priceApproverName?: string
+    priceApproverPhone?: string
+    foundingPartner?: boolean
+    trialDays?: number
   }
   const {
     kind,
@@ -382,6 +485,14 @@ app.post('/api/auth/signup/provider', (req, res) => {
     companyNameAr,
     commercialRegistration,
     licenseNumber,
+    whatsapp,
+    slaHours,
+    techCount,
+    serviceCityIds,
+    priceApproverName,
+    priceApproverPhone,
+    foundingPartner = false,
+    trialDays = DEFAULT_TRIAL_DAYS,
   } = body
 
   if (!kind || !name || !email || !phone || !password) {
@@ -394,20 +505,42 @@ app.post('/api/auth/signup/provider', (req, res) => {
   if (exists) return res.status(409).json({ error: 'Email already registered' })
 
   const phoneNorm = phone.startsWith('+') ? phone : `+966${phone.replace(/^0/, '')}`
+  const whatsappNorm = whatsapp
+    ? whatsapp.startsWith('+')
+      ? whatsapp
+      : `+966${whatsapp.replace(/^0/, '')}`
+    : phoneNorm
   const now = new Date().toISOString()
   const orgId = uid('org')
   const userId = kind === 'company' ? uid('prov') : uid('tech')
   const orgName = kind === 'company' ? companyName! : `${name} (Independent)`
   const orgNameAr =
     kind === 'company' ? companyNameAr || companyName! : `${nameAr || name} (مستقل)`
+  const cities = serviceCityIds?.length ? serviceCityIds : [cityId]
+  const survey = {
+    services: specialties,
+    cities,
+    techCount: techCount ?? (kind === 'independent' ? 1 : undefined),
+    slaHours: slaHours ?? undefined,
+    commercialRegistration: commercialRegistration ?? undefined,
+    whatsapp: whatsappNorm,
+    priceApproverName: priceApproverName ?? undefined,
+    priceApproverPhone: priceApproverPhone ?? undefined,
+    completedAt: now,
+  }
+  const isFounding = Boolean(foundingPartner)
+  const plan = isFounding ? 'pro' : 'launch'
+  const trialEnd = isFounding ? trialEndsAt(new Date(), trialDays) : null
 
   const create = db.transaction(() => {
     db.prepare(
       `INSERT INTO provider_organizations (
         id, kind, name, name_ar, city_id, phone, email,
         commercial_registration, license_number, status,
-        subscription_plan, founding_partner, service_city_ids, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', 'launch', 0, ?, ?)`,
+        subscription_plan, founding_partner, service_city_ids,
+        trial_days, trial_ends_at, whatsapp, sla_hours, tech_count_declared,
+        specialties, price_approver_name, price_approver_phone, onboarding_survey, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       orgId,
       kind,
@@ -418,7 +551,18 @@ app.post('/api/auth/signup/provider', (req, res) => {
       email,
       commercialRegistration ?? null,
       licenseNumber ?? null,
-      JSON.stringify([cityId]),
+      plan,
+      isFounding ? 1 : 0,
+      JSON.stringify(cities),
+      isFounding ? trialDays : null,
+      trialEnd,
+      whatsappNorm,
+      slaHours ?? null,
+      techCount ?? (kind === 'independent' ? 1 : null),
+      JSON.stringify(specialties),
+      priceApproverName ?? null,
+      priceApproverPhone ?? null,
+      JSON.stringify(survey),
       now,
     )
 
@@ -426,8 +570,8 @@ app.post('/api/auth/signup/provider', (req, res) => {
       db.prepare(
         `INSERT INTO users (
           id, role, name, name_ar, email, phone, password_hash, city_id, district_id,
-          active, avatar_color, employment_type, organization_id, created_at
-        ) VALUES (?, 'provider', ?, ?, ?, ?, ?, ?, ?, 1, '#0F766E', 'company', ?, ?)`,
+          active, avatar_color, employment_type, organization_id, last_active_at, created_at
+        ) VALUES (?, 'provider', ?, ?, ?, ?, ?, ?, ?, 1, '#0F766E', 'company', ?, ?, ?)`,
       ).run(
         userId,
         name,
@@ -439,17 +583,20 @@ app.post('/api/auth/signup/provider', (req, res) => {
         districtId ?? null,
         orgId,
         now,
+        now,
       )
       db.prepare(
         `INSERT INTO organization_members (id, organization_id, user_id, member_role, active, created_at)
          VALUES (?, ?, ?, 'owner', 1, ?)`,
       ).run(uid('mem'), orgId, userId, now)
     } else {
+      const techCode = nextTechnicianCode(cityId)
       db.prepare(
         `INSERT INTO users (
           id, role, name, name_ar, email, phone, password_hash, city_id, district_id,
-          specialties, rating, review_count, active, avatar_color, employment_type, organization_id, created_at
-        ) VALUES (?, 'technician', ?, ?, ?, ?, ?, ?, ?, ?, 5.0, 0, 1, '#0B3A4A', 'independent', ?, ?)`,
+          specialties, rating, review_count, active, avatar_color, employment_type, organization_id,
+          technician_code, last_active_at, created_at
+        ) VALUES (?, 'technician', ?, ?, ?, ?, ?, ?, ?, ?, 5.0, 0, 1, '#0B3A4A', 'independent', ?, ?, ?, ?)`,
       ).run(
         userId,
         name,
@@ -461,6 +608,8 @@ app.post('/api/auth/signup/provider', (req, res) => {
         districtId ?? null,
         JSON.stringify(specialties),
         orgId,
+        techCode,
+        now,
         now,
       )
       db.prepare(
@@ -471,7 +620,7 @@ app.post('/api/auth/signup/provider', (req, res) => {
   })
 
   create()
-  const token = createSession(userId)
+  const token = createSession(userId, { singleSession: kind === 'independent' })
   const user = mapUser(db.prepare(`SELECT * FROM users WHERE id = ?`).get(userId) as Record<string, unknown>)
   const organization = mapOrganization(
     db.prepare(`SELECT * FROM provider_organizations WHERE id = ?`).get(orgId) as Record<string, unknown>,
@@ -1754,6 +1903,297 @@ app.post('/api/agent/approvals/:id/decide', auth, (req: Authed, res) => {
       decidedAt: now,
       applied,
     },
+  })
+})
+
+/** Invite / activate a technician under the provider org (enforces plan seat limit). */
+app.post('/api/org/technicians', auth, (req: Authed, res) => {
+  if (req.userRole !== 'provider' && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Providers only' })
+  }
+  const orgId =
+    req.userRole === 'admin'
+      ? (req.body as { organizationId?: string }).organizationId
+      : userOrgId(req.userId!)
+  if (!orgId) return res.status(400).json({ error: 'organizationId required' })
+
+  const seat = assertOrgSeatAvailable(orgId)
+  if (!seat.ok) {
+    return res.status(seat.status).json({
+      error: seat.error,
+      maxTechnicians: seat.max,
+      usedSeats: seat.used,
+      upgradeHint: 'Upgrade to Growth / Pro / Business for more technician seats.',
+    })
+  }
+
+  const body = req.body as {
+    name?: string
+    nameAr?: string
+    email?: string
+    phone?: string
+    password?: string
+    cityId?: string
+    districtId?: string
+    specialties?: string[]
+  }
+  if (!body.name || !body.email || !body.phone || !body.password) {
+    return res.status(400).json({ error: 'name, email, phone, password required' })
+  }
+  const exists = db.prepare(`SELECT id FROM users WHERE lower(email) = lower(?)`).get(body.email)
+  if (exists) return res.status(409).json({ error: 'Email already registered' })
+
+  const cityId = body.cityId || (seat.org!.city_id as string) || 'khobar'
+  const phoneNorm = body.phone.startsWith('+') ? body.phone : `+966${body.phone.replace(/^0/, '')}`
+  const now = new Date().toISOString()
+  const techId = uid('tech')
+  const techCode = nextTechnicianCode(cityId)
+  const specialties = body.specialties?.length ? body.specialties : ['plumbing']
+
+  const run = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO users (
+        id, role, name, name_ar, email, phone, password_hash, city_id, district_id,
+        specialties, rating, review_count, active, avatar_color, employment_type, organization_id,
+        technician_code, last_active_at, created_at
+      ) VALUES (?, 'technician', ?, ?, ?, ?, ?, ?, ?, ?, 5.0, 0, 1, '#156074', 'company', ?, ?, ?, ?)`,
+    ).run(
+      techId,
+      body.name,
+      body.nameAr || body.name,
+      body.email,
+      phoneNorm,
+      bcrypt.hashSync(body.password!, 8),
+      cityId,
+      body.districtId ?? null,
+      JSON.stringify(specialties),
+      orgId,
+      techCode,
+      now,
+      now,
+    )
+    db.prepare(
+      `INSERT INTO organization_members (id, organization_id, user_id, member_role, active, created_at)
+       VALUES (?, ?, ?, 'technician', 1, ?)`,
+    ).run(uid('mem'), orgId, techId, now)
+  })
+  run()
+
+  const user = mapUser(db.prepare(`SELECT * FROM users WHERE id = ?`).get(techId) as Record<string, unknown>)
+  res.status(201).json({
+    user,
+    seats: {
+      used: countActiveTechnicianSeats(orgId),
+      max: seat.max,
+    },
+  })
+})
+
+/** Org digital company profile + survey fields (tenant-scoped). */
+app.patch('/api/org/profile', auth, (req: Authed, res) => {
+  if (req.userRole !== 'provider' && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Providers only' })
+  }
+  const orgId =
+    req.userRole === 'admin'
+      ? (req.body as { organizationId?: string }).organizationId
+      : userOrgId(req.userId!)
+  if (!orgId) return res.status(400).json({ error: 'No organization' })
+
+  const body = req.body as {
+    name?: string
+    nameAr?: string
+    phone?: string
+    email?: string
+    whatsapp?: string
+    commercialRegistration?: string
+    licenseNumber?: string
+    slaHours?: number
+    techCountDeclared?: number
+    serviceCityIds?: string[]
+    specialties?: string[]
+    priceApproverName?: string
+    priceApproverPhone?: string
+  }
+
+  const org = db.prepare(`SELECT * FROM provider_organizations WHERE id = ?`).get(orgId) as
+    | Record<string, unknown>
+    | undefined
+  if (!org) return res.status(404).json({ error: 'Not found' })
+
+  db.prepare(
+    `UPDATE provider_organizations SET
+      name = COALESCE(?, name),
+      name_ar = COALESCE(?, name_ar),
+      phone = COALESCE(?, phone),
+      email = COALESCE(?, email),
+      whatsapp = COALESCE(?, whatsapp),
+      commercial_registration = COALESCE(?, commercial_registration),
+      license_number = COALESCE(?, license_number),
+      sla_hours = COALESCE(?, sla_hours),
+      tech_count_declared = COALESCE(?, tech_count_declared),
+      service_city_ids = COALESCE(?, service_city_ids),
+      specialties = COALESCE(?, specialties),
+      price_approver_name = COALESCE(?, price_approver_name),
+      price_approver_phone = COALESCE(?, price_approver_phone)
+     WHERE id = ?`,
+  ).run(
+    body.name ?? null,
+    body.nameAr ?? null,
+    body.phone ?? null,
+    body.email ?? null,
+    body.whatsapp ?? null,
+    body.commercialRegistration ?? null,
+    body.licenseNumber ?? null,
+    body.slaHours ?? null,
+    body.techCountDeclared ?? null,
+    body.serviceCityIds ? JSON.stringify(body.serviceCityIds) : null,
+    body.specialties ? JSON.stringify(body.specialties) : null,
+    body.priceApproverName ?? null,
+    body.priceApproverPhone ?? null,
+    orgId,
+  )
+
+  res.json({
+    organization: mapOrganization(
+      db.prepare(`SELECT * FROM provider_organizations WHERE id = ?`).get(orgId) as Record<
+        string,
+        unknown
+      >,
+    ),
+  })
+})
+
+/** Seat usage for current org plan. */
+app.get('/api/org/seats', auth, (req: Authed, res) => {
+  if (req.userRole !== 'provider' && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Providers only' })
+  }
+  const orgId =
+    req.userRole === 'admin'
+      ? (req.query.organizationId as string | undefined)
+      : userOrgId(req.userId!)
+  if (!orgId) return res.status(400).json({ error: 'No organization' })
+  const org = db.prepare(`SELECT * FROM provider_organizations WHERE id = ?`).get(orgId) as
+    | Record<string, unknown>
+    | undefined
+  if (!org) return res.status(404).json({ error: 'Not found' })
+  const max = planMaxTechnicians(org.subscription_plan as string)
+  const used = countActiveTechnicianSeats(orgId)
+  res.json({
+    organizationId: orgId,
+    plan: org.subscription_plan,
+    used,
+    max,
+    trialDays: org.trial_days ?? null,
+    trialEndsAt: org.trial_ends_at ?? null,
+    atLimit: max !== null && used >= max,
+  })
+})
+
+/** Seasonal campaign suggestions (human approval required — never auto-publish ads). */
+app.get('/api/org/campaigns/suggestions', auth, (req: Authed, res) => {
+  if (req.userRole !== 'provider' && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Providers only' })
+  }
+  const year = new Date().getFullYear()
+  const suggestions = [
+    {
+      id: 'ramadan',
+      titleEn: 'Ramadan evening service window',
+      titleAr: 'نافذة خدمة مسائية في رمضان',
+      window: `${year}-02 — ${year}-03`,
+      offerIdea: 'After-Taraweeh plumbing/electrical slots + 10% off diagnostics',
+      channel: 'partner_co_marketing',
+      requiresApproval: true,
+    },
+    {
+      id: 'eid-fitr',
+      titleEn: 'Eid al-Fitr home readiness',
+      titleAr: 'تجهيز المنزل لعيد الفطر',
+      window: `${year}-03`,
+      offerIdea: 'Pre-Eid AC check + leak inspection bundle',
+      channel: 'customer_promo',
+      requiresApproval: true,
+    },
+    {
+      id: 'eid-adha',
+      titleEn: 'Eid al-Adha travel-safe homes',
+      titleAr: 'منازل آمنة أثناء سفر العيد',
+      window: `${year}-06`,
+      offerIdea: 'Shutoff / inspection before travel',
+      channel: 'customer_promo',
+      requiresApproval: true,
+    },
+    {
+      id: 'national-day',
+      titleEn: 'Saudi National Day',
+      titleAr: 'اليوم الوطني',
+      window: `${year}-09-23`,
+      offerIdea: 'Green-branded partner spotlight + limited lead boost',
+      channel: 'partner_co_marketing',
+      requiresApproval: true,
+    },
+    {
+      id: 'founding-day',
+      titleEn: 'Founding Day',
+      titleAr: 'يوم التأسيس',
+      window: `${year}-02-22`,
+      offerIdea: 'Founding Partner badge campaign',
+      channel: 'partner_co_marketing',
+      requiresApproval: true,
+    },
+    {
+      id: 'white-friday',
+      titleEn: 'White Friday / Black Friday',
+      titleAr: 'الجمعة البيضاء',
+      window: `${year}-11`,
+      offerIdea: 'Fixed-fee diagnostic promo (approval-gated pricing)',
+      channel: 'customer_promo',
+      requiresApproval: true,
+    },
+    {
+      id: 'back-to-school',
+      titleEn: 'Back to school',
+      titleAr: 'العودة للمدارس',
+      window: `${year}-08 — ${year}-09`,
+      offerIdea: 'AC + lighting readiness packages',
+      channel: 'customer_ads_draft',
+      requiresApproval: true,
+    },
+    {
+      id: 'summer-ac',
+      titleEn: 'Summer AC peak',
+      titleAr: 'ذروة تكييف الصيف',
+      window: `${year}-05 — ${year}-09`,
+      offerIdea: 'Priority AC dispatch slots for Pro+ partners',
+      channel: 'ops_capacity',
+      requiresApproval: true,
+    },
+  ]
+  res.json({
+    suggestions,
+    note: 'Drafts only — never auto-publish paid ads without partner/DARFIX approval.',
+  })
+})
+
+/** Demo SQLite backup (admin). Prefer scripts/backup-db.sh in ops. */
+app.post('/api/admin/backup', auth, (req: Authed, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data')
+  const src = path.join(dataDir, 'darfix.sqlite')
+  if (!fs.existsSync(src)) return res.status(404).json({ error: 'Database file not found' })
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const dest = path.join(dataDir, `darfix-backup-${stamp}.sqlite`)
+  fs.copyFileSync(src, dest)
+  for (const suffix of ['-wal', '-shm']) {
+    const side = `${src}${suffix}`
+    if (fs.existsSync(side)) fs.copyFileSync(side, `${dest}${suffix}`)
+  }
+  res.json({
+    ok: true,
+    path: dest,
+    note: 'Demo SQLite snapshot. Production should use Postgres automated backups + PITR.',
   })
 })
 

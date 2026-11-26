@@ -14,7 +14,7 @@ db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
 
 /** Bump when seed shape changes so existing DBs reseed on next start. */
-export const SEED_VERSION = 'ep-b2b-growth-os-1'
+export const SEED_VERSION = 'ep-b2b-growth-os-2'
 
 function hasColumn(table: string, column: string) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
@@ -207,12 +207,54 @@ export function migrate() {
   if (!hasColumn('provider_organizations', 'service_city_ids')) {
     db.exec(`ALTER TABLE provider_organizations ADD COLUMN service_city_ids TEXT`)
   }
+  if (!hasColumn('provider_organizations', 'trial_days')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN trial_days INTEGER`)
+  }
+  if (!hasColumn('provider_organizations', 'trial_ends_at')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN trial_ends_at TEXT`)
+  }
+  if (!hasColumn('provider_organizations', 'whatsapp')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN whatsapp TEXT`)
+  }
+  if (!hasColumn('provider_organizations', 'sla_hours')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN sla_hours INTEGER`)
+  }
+  if (!hasColumn('provider_organizations', 'tech_count_declared')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN tech_count_declared INTEGER`)
+  }
+  if (!hasColumn('provider_organizations', 'specialties')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN specialties TEXT`)
+  }
+  if (!hasColumn('provider_organizations', 'price_approver_name')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN price_approver_name TEXT`)
+  }
+  if (!hasColumn('provider_organizations', 'price_approver_phone')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN price_approver_phone TEXT`)
+  }
+  if (!hasColumn('provider_organizations', 'onboarding_survey')) {
+    db.exec(`ALTER TABLE provider_organizations ADD COLUMN onboarding_survey TEXT`)
+  }
   if (!hasColumn('quotations', 'submitted_by')) {
     db.exec(`ALTER TABLE quotations ADD COLUMN submitted_by TEXT`)
   }
   if (!hasColumn('quotations', 'company_note')) {
     db.exec(`ALTER TABLE quotations ADD COLUMN company_note TEXT`)
   }
+  if (!hasColumn('users', 'technician_code')) {
+    db.exec(`ALTER TABLE users ADD COLUMN technician_code TEXT`)
+  }
+  if (!hasColumn('users', 'last_active_at')) {
+    db.exec(`ALTER TABLE users ADD COLUMN last_active_at TEXT`)
+  }
+  if (!hasColumn('sessions', 'device_label')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN device_label TEXT`)
+  }
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_technician_code
+      ON users(technician_code)
+      WHERE technician_code IS NOT NULL
+  `)
 }
 
 export function uid(prefix: string) {

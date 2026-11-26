@@ -70,6 +70,14 @@ export const api = {
     companyNameAr?: string
     commercialRegistration?: string
     licenseNumber?: string
+    whatsapp?: string
+    slaHours?: number
+    techCount?: number
+    serviceCityIds?: string[]
+    priceApproverName?: string
+    priceApproverPhone?: string
+    foundingPartner?: boolean
+    trialDays?: number
   }) =>
     request<{ token: string; user: User; organization: unknown }>('/auth/signup/provider', {
       method: 'POST',
@@ -228,4 +236,43 @@ export const api = {
 
   toggleTechnician: (id: string) =>
     request<{ user: User }>(`/technicians/${id}/toggle`, { method: 'POST' }),
+
+  orgSeats: () =>
+    request<{
+      organizationId: string
+      plan: string
+      used: number
+      max: number | null
+      trialDays: number | null
+      trialEndsAt: string | null
+      atLimit: boolean
+    }>('/org/seats'),
+
+  inviteTechnician: (data: {
+    name: string
+    nameAr?: string
+    email: string
+    phone: string
+    password: string
+    cityId?: string
+    specialties?: ServiceCategoryId[]
+  }) =>
+    request<{ user: User; seats: { used: number; max: number | null } }>('/org/technicians', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  campaignSuggestions: () =>
+    request<{
+      suggestions: {
+        id: string
+        titleEn: string
+        titleAr: string
+        window: string
+        offerIdea: string
+        channel: string
+        requiresApproval: boolean
+      }[]
+      note: string
+    }>('/org/campaigns/suggestions'),
 }

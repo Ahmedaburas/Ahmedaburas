@@ -1,6 +1,7 @@
-import { AlertTriangle, Clock, Radar, TrendingUp } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { AlertTriangle, Clock, Radar, TrendingUp, Users } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { api } from '../../api/client'
 import { EmptyState } from '../../components/EmptyState'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useI18n } from '../../i18n'
@@ -22,6 +23,34 @@ export function ProviderHome() {
 
   const [assignMap, setAssignMap] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
+  const [seats, setSeats] = useState<{
+    used: number
+    max: number | null
+    atLimit: boolean
+    trialEndsAt: string | null
+  } | null>(null)
+  const [campaigns, setCampaigns] = useState<
+    { id: string; titleEn: string; titleAr: string; window: string; offerIdea: string }[]
+  >([])
+  const [inviteError, setInviteError] = useState('')
+  const [inviteForm, setInviteForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: 'demo123',
+  })
+
+  useEffect(() => {
+    void api.orgSeats().then((s) =>
+      setSeats({
+        used: s.used,
+        max: s.max,
+        atLimit: s.atLimit,
+        trialEndsAt: s.trialEndsAt,
+      }),
+    ).catch(() => undefined)
+    void api.campaignSuggestions().then((r) => setCampaigns(r.suggestions.slice(0, 4))).catch(() => undefined)
+  }, [org?.id, memberTechs.length])
 
   const today = new Date().toISOString().slice(0, 10)
   const orgBookings = state.bookings.filter(
@@ -124,9 +153,24 @@ export function ProviderHome() {
           )}
           <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800">
             {t('planBadge')}: {locale === 'ar' ? plan?.nameAr : plan?.nameEn}
+            {plan?.maxTechnicians != null
+              ? ` · ${seats?.used ?? memberTechs.length}/${plan.maxTechnicians} ${t('technicianSeats').toLowerCase()}`
+              : ''}
           </span>
+          {(seats?.trialEndsAt || org.trialEndsAt) && (
+            <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+              {t('trialEnds')}:{' '}
+              {new Date(seats?.trialEndsAt || org.trialEndsAt!).toLocaleDateString()}
+            </span>
+          )}
         </div>
       </div>
+
+      {(seats?.atLimit || (plan?.maxTechnicians != null && memberTechs.length >= plan.maxTechnicians)) && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {t('seatLimitReached')} {t('upgradeForSeats')}
+        </p>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {[
@@ -179,6 +223,137 @@ export function ProviderHome() {
           </div>
         )}
       </section>
+
+      {/* Company profile + team */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="card-surface p-5">
+          <h2 className="text-lg font-semibold text-navy-900">{t('companyProfile')}</h2>
+          <dl className="mt-3 space-y-2 text-sm text-navy-700/80">
+            <div className="flex justify-between gap-4">
+              <dt>{t('commercialRegistration')}</dt>
+              <dd className="font-medium text-navy-900">{org.commercialRegistration || '—'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt>{t('whatsappBusiness')}</dt>
+              <dd className="font-medium text-navy-900">{org.whatsapp || org.phone || '—'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt>{t('slaHours')}</dt>
+              <dd className="font-medium text-navy-900">{org.slaHours ?? '—'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt>{t('priceApprover')}</dt>
+              <dd className="font-medium text-navy-900">{org.priceApproverName || '—'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt>{t('serviceCities')}</dt>
+              <dd className="font-medium text-navy-900">
+                {(org.serviceCityIds || [org.cityId]).join(', ')}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-xs text-navy-700/50">{t('orgRolesHint')}</p>
+        </div>
+
+        <div className="card-surface p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <Users className="h-5 w-5 text-teal-600" />
+            <h2 className="text-lg font-semibold text-navy-900">{t('technicians')}</h2>
+          </div>
+          <ul className="space-y-2">
+            {memberTechs.map((tech) => (
+              <li
+                key={tech.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-sand-50 px-3 py-2 text-sm"
+              >
+                <span className="font-medium text-navy-900">
+                  {displayName(tech.name, tech.nameAr)}
+                </span>
+                <span className="font-mono text-xs text-teal-700">
+                  {tech.technicianCode || '—'}
+                </span>
+              </li>
+            ))}
+            {memberTechs.length === 0 && <EmptyState title={t('noData')} />}
+          </ul>
+
+          <form
+            className="mt-4 space-y-2 border-t border-navy-100 pt-4"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              setInviteError('')
+              const result = await actions.inviteTechnician({
+                name: inviteForm.name,
+                email: inviteForm.email,
+                phone: inviteForm.phone,
+                password: inviteForm.password,
+                cityId: org.cityId,
+                specialties: (org.specialties as ('plumbing' | 'electrical')[]) || ['plumbing'],
+              })
+              if ('error' in result) {
+                setInviteError(result.error)
+                return
+              }
+              setInviteForm({ name: '', email: '', phone: '', password: 'demo123' })
+              setSeats({
+                used: result.seats.used,
+                max: result.seats.max,
+                atLimit: result.seats.max != null && result.seats.used >= result.seats.max,
+                trialEndsAt: seats?.trialEndsAt ?? org.trialEndsAt ?? null,
+              })
+            }}
+          >
+            <p className="text-sm font-semibold text-navy-900">{t('inviteTechnician')}</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                className="input-field"
+                placeholder={t('name')}
+                required
+                value={inviteForm.name}
+                onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })}
+              />
+              <input
+                className="input-field"
+                type="email"
+                placeholder={t('email')}
+                required
+                value={inviteForm.email}
+                onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+              />
+              <input
+                className="input-field"
+                placeholder={t('phone')}
+                required
+                value={inviteForm.phone}
+                onChange={(e) => setInviteForm({ ...inviteForm, phone: e.target.value })}
+              />
+              <button type="submit" className="btn-primary">
+                {t('inviteTechnician')}
+              </button>
+            </div>
+            {inviteError && <p className="text-sm text-red-600">{inviteError}</p>}
+          </form>
+        </div>
+      </section>
+
+      {/* Campaign suggestions */}
+      {campaigns.length > 0 && (
+        <section>
+          <h2 className="mb-1 text-lg font-semibold text-navy-900">{t('campaignIdeas')}</h2>
+          <p className="mb-3 text-xs text-navy-700/55">{t('campaignApprovalNote')}</p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {campaigns.map((c) => (
+              <div key={c.id} className="card-surface p-4">
+                <p className="text-xs text-navy-700/45">{c.window}</p>
+                <p className="mt-1 font-semibold text-navy-900">
+                  {locale === 'ar' ? c.titleAr : c.titleEn}
+                </p>
+                <p className="mt-2 text-sm text-navy-700/70">{c.offerIdea}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Lead inbox */}
       <section>
@@ -322,6 +497,7 @@ export function ProviderHome() {
                           .filter((tech) => tech.specialties?.includes(b.categoryId))
                           .map((tech) => (
                             <option key={tech.id} value={tech.id}>
+                              {tech.technicianCode ? `${tech.technicianCode} · ` : ''}
                               {displayName(tech.name, tech.nameAr)}
                             </option>
                           ))}

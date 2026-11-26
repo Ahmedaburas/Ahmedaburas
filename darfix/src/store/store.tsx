@@ -66,7 +66,23 @@ interface StoreActions {
     companyNameAr?: string
     commercialRegistration?: string
     licenseNumber?: string
+    whatsapp?: string
+    slaHours?: number
+    techCount?: number
+    serviceCityIds?: string[]
+    priceApproverName?: string
+    priceApproverPhone?: string
+    foundingPartner?: boolean
+    trialDays?: number
   }) => Promise<User | { error: string }>
+  inviteTechnician: (data: {
+    name: string
+    email: string
+    phone: string
+    password: string
+    cityId?: string
+    specialties?: ServiceCategoryId[]
+  }) => Promise<{ user: User; seats: { used: number; max: number | null } } | { error: string }>
   setLocale: (locale: 'en' | 'ar') => void
   resetDemoData: () => Promise<void>
   refresh: () => Promise<void>
@@ -272,6 +288,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       companyNameAr?: string
       commercialRegistration?: string
       licenseNumber?: string
+      whatsapp?: string
+      slaHours?: number
+      techCount?: number
+      serviceCityIds?: string[]
+      priceApproverName?: string
+      priceApproverPhone?: string
+      foundingPartner?: boolean
+      trialDays?: number
     }) => {
       try {
         const { token, user } = await api.signupProvider(data)
@@ -280,6 +304,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return user
       } catch (e) {
         return { error: e instanceof Error ? e.message : 'Signup failed' }
+      }
+    }
+
+    const inviteTechnician = async (data: {
+      name: string
+      email: string
+      phone: string
+      password: string
+      cityId?: string
+      specialties?: ServiceCategoryId[]
+    }) => {
+      try {
+        const result = await api.inviteTechnician(data)
+        await refresh()
+        return result
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : 'Invite failed' }
       }
     }
 
@@ -472,6 +513,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       logout,
       signup,
       signupProvider,
+      inviteTechnician,
       setLocale,
       resetDemoData,
       refresh,

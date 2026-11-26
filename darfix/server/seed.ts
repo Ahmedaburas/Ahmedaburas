@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { db, SEED_VERSION, uid } from './db'
+import { DEFAULT_TRIAL_DAYS, formatTechnicianCode, trialEndsAt } from './plans'
 import { defaultChecklist, emptyProcess, type BookingProcess } from './types'
 
 const DEMO_PASSWORD = 'demo123'
@@ -44,11 +45,11 @@ export function seedIfEmpty(force = false) {
     INSERT INTO users (
       id, role, name, name_ar, email, phone, password_hash,
       city_id, district_id, specialties, rating, review_count, active, avatar_color,
-      employment_type, organization_id, created_at
+      employment_type, organization_id, technician_code, last_active_at, created_at
     ) VALUES (
       @id, @role, @name, @name_ar, @email, @phone, @password_hash,
       @city_id, @district_id, @specialties, @rating, @review_count, @active, @avatar_color,
-      @employment_type, @organization_id, @created_at
+      @employment_type, @organization_id, @technician_code, @last_active_at, @created_at
     )
   `)
 
@@ -56,11 +57,15 @@ export function seedIfEmpty(force = false) {
     INSERT INTO provider_organizations (
       id, kind, name, name_ar, city_id, phone, email,
       commercial_registration, license_number, status,
-      subscription_plan, founding_partner, service_city_ids, created_at
+      subscription_plan, founding_partner, service_city_ids,
+      trial_days, trial_ends_at, whatsapp, sla_hours, tech_count_declared,
+      specialties, price_approver_name, price_approver_phone, onboarding_survey, created_at
     ) VALUES (
       @id, @kind, @name, @name_ar, @city_id, @phone, @email,
       @commercial_registration, @license_number, @status,
-      @subscription_plan, @founding_partner, @service_city_ids, @created_at
+      @subscription_plan, @founding_partner, @service_city_ids,
+      @trial_days, @trial_ends_at, @whatsapp, @sla_hours, @tech_count_declared,
+      @specialties, @price_approver_name, @price_approver_phone, @onboarding_survey, @created_at
     )
   `)
 
@@ -77,6 +82,7 @@ export function seedIfEmpty(force = false) {
   `)
 
   const now = new Date().toISOString()
+  const foundingTrialEnd = trialEndsAt(new Date(), DEFAULT_TRIAL_DAYS)
 
   const orgs = [
     {
@@ -93,6 +99,21 @@ export function seedIfEmpty(force = false) {
       subscription_plan: 'pro',
       founding_partner: 1,
       service_city_ids: JSON.stringify(['khobar', 'dhahran', 'dammam', 'jubail']),
+      trial_days: DEFAULT_TRIAL_DAYS,
+      trial_ends_at: foundingTrialEnd,
+      whatsapp: '+966138600100',
+      sla_hours: 4,
+      tech_count_declared: 8,
+      specialties: JSON.stringify(['plumbing', 'electrical']),
+      price_approver_name: 'Hassan Al Mutairi',
+      price_approver_phone: '+966501001001',
+      onboarding_survey: JSON.stringify({
+        services: ['plumbing', 'electrical'],
+        cities: ['khobar', 'dhahran', 'dammam', 'jubail'],
+        techCount: 8,
+        slaHours: 4,
+        completedAt: now,
+      }),
     },
     {
       id: 'org-company-2',
@@ -108,6 +129,21 @@ export function seedIfEmpty(force = false) {
       subscription_plan: 'growth',
       founding_partner: 1,
       service_city_ids: JSON.stringify(['dammam', 'khobar', 'dhahran']),
+      trial_days: DEFAULT_TRIAL_DAYS,
+      trial_ends_at: foundingTrialEnd,
+      whatsapp: '+966138601200',
+      sla_hours: 6,
+      tech_count_declared: 3,
+      specialties: JSON.stringify(['plumbing', 'electrical']),
+      price_approver_name: 'Latifa Al Rashid',
+      price_approver_phone: '+966502002002',
+      onboarding_survey: JSON.stringify({
+        services: ['plumbing', 'electrical'],
+        cities: ['dammam', 'khobar', 'dhahran'],
+        techCount: 3,
+        slaHours: 6,
+        completedAt: now,
+      }),
     },
     {
       id: 'org-company-3',
@@ -123,6 +159,15 @@ export function seedIfEmpty(force = false) {
       subscription_plan: 'pro',
       founding_partner: 1,
       service_city_ids: JSON.stringify(['jubail', 'dammam']),
+      trial_days: DEFAULT_TRIAL_DAYS,
+      trial_ends_at: foundingTrialEnd,
+      whatsapp: '+966133600100',
+      sla_hours: 4,
+      tech_count_declared: 5,
+      specialties: JSON.stringify(['plumbing', 'electrical']),
+      price_approver_name: null,
+      price_approver_phone: null,
+      onboarding_survey: null,
     },
     {
       id: 'org-indie-1',
@@ -138,6 +183,15 @@ export function seedIfEmpty(force = false) {
       subscription_plan: 'launch',
       founding_partner: 0,
       service_city_ids: JSON.stringify(['khobar', 'dhahran']),
+      trial_days: null,
+      trial_ends_at: null,
+      whatsapp: '+966501112233',
+      sla_hours: 8,
+      tech_count_declared: 1,
+      specialties: JSON.stringify(['plumbing', 'electrical']),
+      price_approver_name: null,
+      price_approver_phone: null,
+      onboarding_survey: null,
     },
     {
       id: 'org-indie-2',
@@ -153,6 +207,15 @@ export function seedIfEmpty(force = false) {
       subscription_plan: 'launch',
       founding_partner: 0,
       service_city_ids: JSON.stringify(['dammam', 'khobar']),
+      trial_days: null,
+      trial_ends_at: null,
+      whatsapp: '+966507778899',
+      sla_hours: 8,
+      tech_count_declared: 1,
+      specialties: JSON.stringify(['electrical']),
+      price_approver_name: null,
+      price_approver_phone: null,
+      onboarding_survey: null,
     },
   ]
 
@@ -173,6 +236,8 @@ export function seedIfEmpty(force = false) {
       avatar_color: '#14B8A6',
       employment_type: null,
       organization_id: null,
+      technician_code: null,
+      last_active_at: null,
     },
     {
       id: 'cust-2',
@@ -190,6 +255,8 @@ export function seedIfEmpty(force = false) {
       avatar_color: '#0D9488',
       employment_type: null,
       organization_id: null,
+      technician_code: null,
+      last_active_at: null,
     },
     {
       id: 'provider-1',
@@ -207,6 +274,8 @@ export function seedIfEmpty(force = false) {
       avatar_color: '#0F766E',
       employment_type: 'company',
       organization_id: 'org-company-1',
+      technician_code: null,
+      last_active_at: hoursAgo(1),
     },
     {
       id: 'provider-2',
@@ -224,6 +293,8 @@ export function seedIfEmpty(force = false) {
       avatar_color: '#0E7490',
       employment_type: 'company',
       organization_id: 'org-company-2',
+      technician_code: null,
+      last_active_at: hoursAgo(3),
     },
     {
       id: 'tech-1',
@@ -241,6 +312,8 @@ export function seedIfEmpty(force = false) {
       avatar_color: '#0B3A4A',
       employment_type: 'independent',
       organization_id: 'org-indie-1',
+      technician_code: formatTechnicianCode('khobar', 1),
+      last_active_at: hoursAgo(2),
     },
     {
       id: 'tech-2',
@@ -258,6 +331,8 @@ export function seedIfEmpty(force = false) {
       avatar_color: '#156074',
       employment_type: 'company',
       organization_id: 'org-company-1',
+      technician_code: formatTechnicianCode('khobar', 42),
+      last_active_at: hoursAgo(8),
     },
     {
       id: 'tech-3',
@@ -275,6 +350,8 @@ export function seedIfEmpty(force = false) {
       avatar_color: '#0F4A5C',
       employment_type: 'independent',
       organization_id: 'org-indie-2',
+      technician_code: formatTechnicianCode('dammam', 7),
+      last_active_at: daysAgo(1),
     },
     {
       id: 'tech-4',
@@ -292,6 +369,8 @@ export function seedIfEmpty(force = false) {
       avatar_color: '#115E59',
       employment_type: 'company',
       organization_id: 'org-company-1',
+      technician_code: formatTechnicianCode('dhahran', 18),
+      last_active_at: hoursAgo(5),
     },
     {
       id: 'tech-5',
@@ -309,6 +388,8 @@ export function seedIfEmpty(force = false) {
       avatar_color: '#134E4A',
       employment_type: 'company',
       organization_id: 'org-company-2',
+      technician_code: formatTechnicianCode('dammam', 11),
+      last_active_at: hoursAgo(12),
     },
     {
       id: 'admin-1',
@@ -326,6 +407,8 @@ export function seedIfEmpty(force = false) {
       avatar_color: '#061820',
       employment_type: null,
       organization_id: null,
+      technician_code: null,
+      last_active_at: null,
     },
   ]
 
