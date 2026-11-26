@@ -33,7 +33,7 @@ import {
   paymentsMode,
   publicAppBaseUrl,
 } from './payments'
-import { DEMO_PASSWORD, seedIfEmpty } from './seed'
+import { seedIfEmpty } from './seed'
 import { defaultChecklist, emptyProcess, type BookingProcess, type BookingStatus } from './types'
 
 migrate()
@@ -42,6 +42,25 @@ seedIfEmpty()
 const app = express()
 const PORT = Number(process.env.PORT || 8787)
 
+/** Hosted / pilot lock-down (secret required, CORS closed, mock pay off unless flagged). */
+function isProdLike(): boolean {
+  return process.env.NODE_ENV === 'production' || process.env.DARFIX_REQUIRE_SECRET === '1'
+}
+
+/**
+ * Mock invoice/subscription pay is for local smoke only.
+ * Disabled when prod-like or when a real DARFIX_SECRET is bound (hosted),
+ * unless DARFIX_ALLOW_MOCK_PAY=1 is set explicitly.
+ */
+function allowMockPayments(): boolean {
+  if (paymentsMode() !== 'mock') return false
+  if (process.env.DARFIX_ALLOW_MOCK_PAY === '1') return true
+  if (isProdLike()) return false
+  // Bound app secret ⇒ hosted/pilot — do not allow free mark-paid.
+  if (process.env.DARFIX_SECRET || process.env.JWT_SECRET) return false
+  return true
+}
+
 /**
  * Session/app secret: env only in production/pilot; never a fixed fallback string in source.
  * Local demo may generate an ephemeral secret for this process when unset.
@@ -49,9 +68,7 @@ const PORT = Number(process.env.PORT || 8787)
 function resolveAppSecret(): string {
   const fromEnv = process.env.DARFIX_SECRET || process.env.JWT_SECRET
   if (fromEnv && fromEnv.trim()) return fromEnv.trim()
-  const requireSecret =
-    process.env.NODE_ENV === 'production' || process.env.DARFIX_REQUIRE_SECRET === '1'
-  if (requireSecret) {
+  if (isProdLike()) {
     console.error(
       'FATAL: DARFIX_SECRET (or JWT_SECRET) is required when NODE_ENV=production or DARFIX_REQUIRE_SECRET=1',
     )
@@ -74,15 +91,26 @@ function corsOriginOption(): cors.CorsOptions['origin'] {
   if (list.length) {
     return (origin, callback) => {
       if (!origin || list.includes(origin)) callback(null, true)
-      else callback(new Error('Not allowed by CORS'))
+      else callback(null, false)
     }
   }
   // Combined pilot / production without allowlist: same-origin only (SPA served by Express).
-  if (process.env.NODE_ENV === 'production' || process.env.DARFIX_REQUIRE_SECRET === '1') {
+  if (isProdLike()) {
     return false
   }
-  // Local Vite + API: reflect request origin.
-  return true
+  // Local Vite + API: loopback only — never reflect arbitrary Origin.
+  const localDefaults = new Set([
+    'http://127.0.0.1:5173',
+    'http://localhost:5173',
+    'http://127.0.0.1:8787',
+    'http://localhost:8787',
+    'http://127.0.0.1:8790',
+    'http://localhost:8790',
+  ])
+  return (origin, callback) => {
+    if (!origin || localDefaults.has(origin)) callback(null, true)
+    else callback(null, false)
+  }
 }
 
 app.use(cors({ origin: corsOriginOption(), credentials: true }))
@@ -188,11 +216,12 @@ function assertBookingAccess(
     if (bookingOrg && bookingOrg !== myOrg) {
       return { ok: false, status: 403, error: 'Booking not in your organization' }
     }
-    // Unassigned marketplace jobs: provider may only touch if they have an open lead offer
-    if (!bookingOrg && action !== 'assign') {
+    // Unassigned marketplace jobs (incl. assign): require an accepted lead offer.
+    // Pending "offered" leads are answered via /api/lead-offers/:id/respond, not booking mutations.
+    if (!bookingOrg) {
       const offer = db
         .prepare(
-          `SELECT id FROM lead_offers WHERE booking_id = ? AND organization_id = ? AND status IN ('pending','accepted') LIMIT 1`,
+          `SELECT id FROM lead_offers WHERE booking_id = ? AND organization_id = ? AND status = 'accepted' LIMIT 1`,
         )
         .get(booking.id, myOrg) as { id: string } | undefined
       if (!offer) {
@@ -825,9 +854,13 @@ app.patch('/api/locale', auth, (req: Authed, res) => {
 
 app.post('/api/demo/reset', auth, (req: Authed, res) => {
   if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  if (isProdLike()) {
+    return res.status(403).json({ error: 'Demo reset disabled in production' })
+  }
   seedIfEmpty(true)
   const token = createSession('admin-1')
-  res.json({ token, state: loadBootstrap('admin-1', 'admin', 'en'), demoPassword: DEMO_PASSWORD })
+  // Never echo demo passwords in API responses (UI may show its own local hint).
+  res.json({ token, state: loadBootstrap('admin-1', 'admin', 'en') })
 })
 
 app.get('/api/fees/:categoryId/:problemId', (_req, res) => {
@@ -1480,6 +1513,10 @@ app.post('/api/notifications/read-all', auth, (req: Authed, res) => {
 })
 
 app.post('/api/invoices/:id/pay', auth, async (req: Authed, res) => {
+  // Mock mark-paid only — refuse on hosted/pilot unless DARFIX_ALLOW_MOCK_PAY=1
+  if (!allowMockPayments()) {
+    return res.status(403).json({ error: 'Mock invoice pay disabled — use the payment gateway' })
+  }
   const invoice = db.prepare(`SELECT * FROM invoices WHERE id = ?`).get(req.params.id) as
     | Record<string, unknown>
     | undefined
@@ -2474,11 +2511,13 @@ app.post('/api/org/subscription/checkout', auth, async (req: Authed, res) => {
       paymentsProvider: created.provider,
       publishableKey:
         created.provider === 'moyasar' ? process.env.MOYASAR_PUBLISHABLE_KEY || null : null,
-      simulateAvailable: created.provider === 'mock',
+      simulateAvailable: created.provider === 'mock' && allowMockPayments(),
       note:
-        created.provider === 'mock'
+        created.provider === 'mock' && allowMockPayments()
           ? 'Mock mode — call POST /api/org/subscription/checkout/:id/simulate to mark paid.'
-          : 'Hosted Moyasar page accepts Mada, Visa, Mastercard. Settlement → platform merchant IBAN.',
+          : created.provider === 'mock'
+            ? 'Mock provider is configured but simulate is disabled on this host.'
+            : 'Hosted Moyasar page accepts Mada, Visa, Mastercard. Settlement → platform merchant IBAN.',
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Checkout failed'
@@ -2491,9 +2530,9 @@ app.post('/api/org/subscription/checkout/:id/simulate', auth, (req: Authed, res)
   if (req.userRole !== 'provider' && req.userRole !== 'admin') {
     return res.status(403).json({ error: 'Providers only' })
   }
-  // Never allow simulate when a real PSP is configured, even if the row says mock.
-  if (paymentsMode() !== 'mock') {
-    return res.status(403).json({ error: 'Simulate disabled outside mock payment mode' })
+  // Never allow simulate when a real PSP is configured, or on hosted/pilot without explicit flag.
+  if (!allowMockPayments()) {
+    return res.status(403).json({ error: 'Simulate disabled outside local mock payment mode' })
   }
   const row = db
     .prepare(`SELECT * FROM subscription_checkouts WHERE id = ?`)
@@ -2547,6 +2586,10 @@ app.post('/api/org/subscription/checkout/:id/simulate', auth, (req: Authed, res)
  * Activates plan when invoice/payment is paid. Idempotent.
  */
 app.post('/api/payments/moyasar/webhook', async (req, res) => {
+  // Unauthenticated webhook must not activate plans while running in mock mode.
+  if (paymentsMode() !== 'moyasar') {
+    return res.status(403).json({ error: 'Webhook accepted only when Moyasar is configured' })
+  }
   const payload = req.body || {}
   const data = (payload.data || payload) as Record<string, unknown>
   const meta = (data.metadata || {}) as Record<string, string>
