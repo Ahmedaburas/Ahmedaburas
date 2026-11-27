@@ -68,6 +68,9 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  providerSignupConfig: () =>
+    request<{ inviteRequired: boolean }>('/auth/signup/provider/config'),
+
   signupProvider: (data: {
     kind: 'independent' | 'company'
     name: string
@@ -88,6 +91,7 @@ export const api = {
     serviceCityIds?: string[]
     priceApproverName?: string
     priceApproverPhone?: string
+    inviteCode?: string
   }) =>
     request<{ token: string; user: User; organization: unknown }>('/auth/signup/provider', {
       method: 'POST',

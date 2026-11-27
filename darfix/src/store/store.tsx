@@ -71,6 +71,7 @@ interface StoreActions {
     serviceCityIds?: string[]
     priceApproverName?: string
     priceApproverPhone?: string
+    inviteCode?: string
   }) => Promise<User | { error: string }>
   inviteTechnician: (data: {
     name: string
@@ -291,6 +292,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       serviceCityIds?: string[]
       priceApproverName?: string
       priceApproverPhone?: string
+      inviteCode?: string
     }) => {
       try {
         const { token, user } = await api.signupProvider(data)

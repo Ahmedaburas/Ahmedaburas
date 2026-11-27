@@ -1,5 +1,7 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { RequireAuth } from './components/RequireAuth'
+import { ToastProvider } from './components/Toast'
 import { I18nProvider } from './i18n'
 import { StoreProvider, useStore } from './store/store'
 import { Landing } from './pages/Landing'
@@ -14,7 +16,6 @@ import { CustomerBookingDetail } from './pages/customer/BookingDetail'
 import { TechHome } from './pages/technician/TechHome'
 import { TechJobDetail } from './pages/technician/JobDetail'
 import { ProviderHome } from './pages/provider/ProviderHome'
-import { ProviderControlTower } from './pages/provider/ControlTower'
 import { ProviderBookingDetail } from './pages/provider/BookingDetail'
 import { ProviderBilling } from './pages/provider/Billing'
 import { AdminOverview } from './pages/admin/AdminOverview'
@@ -27,6 +28,20 @@ import {
   AdminReports,
 } from './pages/admin/AdminOps'
 import { CustomerLayout, TechLayout, AdminLayout, ProviderLayout } from './pages/layouts'
+
+const ProviderControlTower = lazy(() =>
+  import('./pages/provider/ControlTower').then((m) => ({ default: m.ProviderControlTower })),
+)
+
+function TowerFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <div className="rounded-2xl bg-teal-50 px-5 py-3 text-sm font-semibold text-teal-800 animate-[pulse-soft_1.4s_ease-in-out_infinite]">
+        Control Tower…
+      </div>
+    </div>
+  )
+}
 
 function NotificationsRedirect() {
   const { currentUser } = useStore()
@@ -46,6 +61,7 @@ export default function App() {
   return (
     <StoreProvider>
       <I18nProvider>
+        <ToastProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Landing />} />
@@ -90,7 +106,14 @@ export default function App() {
               }
             >
               <Route index element={<ProviderHome />} />
-              <Route path="control-tower" element={<ProviderControlTower />} />
+              <Route
+                path="control-tower"
+                element={
+                  <Suspense fallback={<TowerFallback />}>
+                    <ProviderControlTower />
+                  </Suspense>
+                }
+              />
               <Route path="billing" element={<ProviderBilling />} />
               <Route path="bookings/:id" element={<ProviderBookingDetail />} />
               <Route path="notifications" element={<NotificationsPage />} />
@@ -120,6 +143,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
+        </ToastProvider>
       </I18nProvider>
     </StoreProvider>
   )

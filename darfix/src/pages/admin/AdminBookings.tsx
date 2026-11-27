@@ -49,7 +49,7 @@ export function AdminBookings() {
       </div>
 
       {list.length === 0 ? (
-        <EmptyState title={t('noData')} />
+        <EmptyState title={t('emptyAdminBookingsTitle')} description={t('emptyAdminBookingsDesc')} />
       ) : (
         <div className="overflow-x-auto card-surface">
           <table className="w-full min-w-[720px] text-start text-sm">
@@ -120,7 +120,7 @@ export function AdminBookingDetail() {
   const [quoteLines, setQuoteLines] = useState({ label: '', amount: '' })
 
   if (!booking) {
-    return <EmptyState title={t('noData')} />
+    return <EmptyState title={t('bookingNotFound')} />
   }
 
   const assignedOrg = state.organizations.find((o) => o.id === booking.organizationId)

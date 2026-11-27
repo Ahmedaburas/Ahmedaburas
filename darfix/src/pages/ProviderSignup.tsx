@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { api } from '../api/client'
 import { LAUNCH_CITY_ID, serviceAreaCities } from '../config/cities'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { Logo } from '../components/Logo'
@@ -15,6 +16,7 @@ export function ProviderSignup() {
   const launch = cities.find((c) => c.id === LAUNCH_CITY_ID) ?? cities[0]
 
   const [kind, setKind] = useState<'independent' | 'company'>('independent')
+  const [inviteRequired, setInviteRequired] = useState(false)
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -30,6 +32,7 @@ export function ProviderSignup() {
     techCount: '3',
     priceApproverName: '',
     priceApproverPhone: '',
+    inviteCode: '',
     plumbing: true,
     electrical: false,
     cityKhobar: true,
@@ -38,6 +41,13 @@ export function ProviderSignup() {
     cityJubail: false,
   })
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    void api
+      .providerSignupConfig()
+      .then((c) => setInviteRequired(c.inviteRequired))
+      .catch(() => setInviteRequired(false))
+  }, [])
 
   const districts = useMemo(
     () => cities.find((c) => c.id === form.cityId)?.districts ?? [],
@@ -80,6 +90,7 @@ export function ProviderSignup() {
       serviceCityIds,
       priceApproverName: form.priceApproverName || undefined,
       priceApproverPhone: form.priceApproverPhone || undefined,
+      inviteCode: form.inviteCode.trim() || undefined,
     })
     if ('error' in result) {
       setError(result.error)
@@ -177,6 +188,19 @@ export function ProviderSignup() {
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
             />
+          </div>
+          <div>
+            <label className="label-text">{t('inviteCode')}</label>
+            <input
+              className="input-field"
+              value={form.inviteCode}
+              required={inviteRequired}
+              autoComplete="off"
+              onChange={(e) => setForm({ ...form, inviteCode: e.target.value })}
+            />
+            <p className="mt-1 text-xs text-navy-700/50">
+              {inviteRequired ? t('inviteCodeRequired') : t('inviteCodeOptional')}
+            </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>

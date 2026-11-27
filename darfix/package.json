@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n api,web -c teal,cyan \"npm:dev:server\" \"npm:dev:client\"",
-    "dev:client": "vite",
+    "dev:client": "vite --host 127.0.0.1 --port 5173",
     "dev:server": "tsx watch server/index.ts",
     "build": "tsc -b && vite build",
     "start": "tsx server/index.ts",

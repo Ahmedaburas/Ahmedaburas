@@ -23,7 +23,7 @@ export function TechHome() {
       <section className="mb-10">
         <h2 className="mb-4 text-lg font-semibold text-navy-900">{t('assignedJobs')}</h2>
         {active.length === 0 ? (
-          <EmptyState title={t('noData')} />
+          <EmptyState title={t('emptyTechJobsTitle')} description={t('emptyTechJobsDesc')} />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
             {active.map((b) => (

@@ -221,7 +221,9 @@ ${story.sections.map((s) => `<h2>${s.heading}</h2><p>${s.body}</p>`).join('')}
     URL.revokeObjectURL(url)
   }
 
-  if (!org) return <EmptyState title={t('noData')} />
+  if (!org) {
+    return <EmptyState title={t('emptyTowerOrgTitle')} description={t('emptyTowerOrgDesc')} />
+  }
 
   return (
     <div className="space-y-8 animate-[fade-up_0.4s_ease-out]">
@@ -340,7 +342,7 @@ ${story.sections.map((s) => `<h2>${s.heading}</h2><p>${s.body}</p>`).join('')}
           <p className="mb-4 text-xs text-navy-700/50">{t('towerStatusMixSub')}</p>
           <div className="h-64">
             {pie.length === 0 ? (
-              <EmptyState title={t('noData')} />
+              <EmptyState title={t('emptyChartTitle')} description={t('emptyChartDesc')} />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -362,7 +364,7 @@ ${story.sections.map((s) => `<h2>${s.heading}</h2><p>${s.body}</p>`).join('')}
           <p className="mb-4 text-xs text-navy-700/50">{t('towerTechLoadSub')}</p>
           <div className="h-64">
             {techBars.length === 0 ? (
-              <EmptyState title={t('noData')} />
+              <EmptyState title={t('emptyChartTitle')} description={t('emptyChartDesc')} />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={techBars}>
@@ -400,7 +402,7 @@ ${story.sections.map((s) => `<h2>${s.heading}</h2><p>${s.body}</p>`).join('')}
         <ol className="relative max-h-[420px] space-y-0 overflow-y-auto border-s-2 border-teal-200/80 ms-3">
           {timeline.length === 0 ? (
             <li className="ps-6 py-4">
-              <EmptyState title={t('noData')} />
+              <EmptyState title={t('emptyTimelineTitle')} description={t('emptyTimelineDesc')} />
             </li>
           ) : (
             timeline.map((ev) => (

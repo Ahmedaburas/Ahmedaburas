@@ -646,21 +646,49 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'darfix' })
 })
 
-/** Simple in-memory login throttle (per email+IP). */
-const loginAttempts = new Map<string, { count: number; resetAt: number }>()
-function assertLoginRateLimit(key: string): { ok: true } | { ok: false; retryAfterSec: number } {
+/** Simple in-memory throttle (per key). */
+const attemptBuckets = new Map<string, { count: number; resetAt: number }>()
+function assertRateLimit(
+  key: string,
+  max = 20,
+  windowMs = 15 * 60 * 1000,
+): { ok: true } | { ok: false; retryAfterSec: number } {
   const now = Date.now()
-  const windowMs = 15 * 60 * 1000
-  const max = 20
-  const cur = loginAttempts.get(key)
+  const cur = attemptBuckets.get(key)
   if (!cur || cur.resetAt < now) {
-    loginAttempts.set(key, { count: 1, resetAt: now + windowMs })
+    attemptBuckets.set(key, { count: 1, resetAt: now + windowMs })
     return { ok: true }
   }
   if (cur.count >= max) {
     return { ok: false, retryAfterSec: Math.ceil((cur.resetAt - now) / 1000) }
   }
   cur.count += 1
+  return { ok: true }
+}
+
+function clientIp(req: { ip?: string; socket: { remoteAddress?: string } }) {
+  return req.ip || req.socket.remoteAddress || 'unknown'
+}
+
+/** Optional partner invite codes — when set, provider signup requires a matching code. */
+function providerInviteCodes(): string[] {
+  return (process.env.DARFIX_PROVIDER_INVITE_CODES || '')
+    .split(',')
+    .map((c) => c.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function providerInviteRequired() {
+  return providerInviteCodes().length > 0
+}
+
+function assertProviderInviteCode(code?: string): { ok: true } | { ok: false; error: string } {
+  const allowed = providerInviteCodes()
+  if (allowed.length === 0) return { ok: true }
+  const normalized = (code || '').trim().toLowerCase()
+  if (!normalized || !allowed.includes(normalized)) {
+    return { ok: false, error: 'Invalid or missing invite code' }
+  }
   return { ok: true }
 }
 
@@ -673,8 +701,7 @@ app.post('/api/auth/login', (req, res) => {
     deviceLabel?: string
   }
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' })
-  const ip = req.ip || req.socket.remoteAddress || 'unknown'
-  const rate = assertLoginRateLimit(`${email.toLowerCase()}|${ip}`)
+  const rate = assertRateLimit(`login|${email.toLowerCase()}|${clientIp(req)}`)
   if (!rate.ok) {
     res.setHeader('Retry-After', String(rate.retryAfterSec))
     return res.status(429).json({ error: 'Too many login attempts. Try again later.' })
@@ -711,6 +738,10 @@ app.post('/api/auth/login', (req, res) => {
   })
 })
 
+app.get('/api/auth/signup/provider/config', (_req, res) => {
+  res.json({ inviteRequired: providerInviteRequired() })
+})
+
 app.post('/api/auth/signup', (req, res) => {
   const { name, nameAr, email, phone, password, cityId, districtId } = req.body as {
     name?: string
@@ -720,6 +751,11 @@ app.post('/api/auth/signup', (req, res) => {
     password?: string
     cityId?: string
     districtId?: string
+  }
+  const rate = assertRateLimit(`signup|${clientIp(req)}`, 10)
+  if (!rate.ok) {
+    res.setHeader('Retry-After', String(rate.retryAfterSec))
+    return res.status(429).json({ error: 'Too many signup attempts. Try again later.' })
   }
   if (!name || !email || !phone || !password) {
     return res.status(400).json({ error: 'Missing required fields' })
@@ -769,6 +805,7 @@ app.post('/api/auth/signup/provider', (req, res) => {
     serviceCityIds?: string[]
     priceApproverName?: string
     priceApproverPhone?: string
+    inviteCode?: string
     // foundingPartner / trialDays intentionally ignored — client cannot self-elevate
   }
   const {
@@ -791,7 +828,14 @@ app.post('/api/auth/signup/provider', (req, res) => {
     serviceCityIds,
     priceApproverName,
     priceApproverPhone,
+    inviteCode,
   } = body
+
+  const rate = assertRateLimit(`signup-provider|${clientIp(req)}`, 8)
+  if (!rate.ok) {
+    res.setHeader('Retry-After', String(rate.retryAfterSec))
+    return res.status(429).json({ error: 'Too many signup attempts. Try again later.' })
+  }
 
   if (!kind || !name || !email || !phone || !password) {
     return res.status(400).json({ error: 'Missing required fields' })
@@ -799,6 +843,8 @@ app.post('/api/auth/signup/provider', (req, res) => {
   if (kind === 'company' && !companyName) {
     return res.status(400).json({ error: 'Company name required' })
   }
+  const invite = assertProviderInviteCode(inviteCode)
+  if (!invite.ok) return res.status(403).json({ error: invite.error })
   const exists = db.prepare(`SELECT id FROM users WHERE lower(email) = lower(?)`).get(email)
   if (exists) return res.status(409).json({ error: 'Email already registered' })
 
@@ -2949,18 +2995,28 @@ app.get('/api/dev/ux-audit', auth, (req: Authed, res) => {
       secretConfigured: Boolean(process.env.DARFIX_SECRET || process.env.JWT_SECRET),
       bcryptRounds: BCRYPT_ROUNDS,
       loginRateLimit: { windowMinutes: 15, maxAttempts: 20 },
+      signupRateLimit: { windowMinutes: 15, customerMax: 10, providerMax: 8 },
+      providerInviteRequired: providerInviteRequired(),
       photoLimits: { perUpload: 8, perBooking: 24 },
     },
     checklist: [
       { id: 'provider-booking-detail', status: 'pass', note: 'Dedicated /provider/bookings/:id page' },
       { id: 'invite-password-field', status: 'pass', note: 'Technician invite collects temp password' },
-      { id: 'control-tower-charts', status: 'pass', note: 'Interactive charts + AI report studio' },
+      { id: 'control-tower-charts', status: 'pass', note: 'Lazy-loaded Control Tower + Recharts chunk' },
       { id: 'login-throttle', status: 'pass', note: 'In-memory login rate limit' },
+      { id: 'signup-throttle', status: 'pass', note: 'Customer + provider signup rate limits' },
+      {
+        id: 'provider-invite-codes',
+        status: providerInviteRequired() ? 'pass' : 'watch',
+        note: providerInviteRequired()
+          ? 'DARFIX_PROVIDER_INVITE_CODES enforced'
+          : 'Optional — set DARFIX_PROVIDER_INVITE_CODES to require partner codes',
+      },
       { id: 'fees-auth', status: 'pass', note: 'Fee lookup requires auth' },
       {
         id: 'open-signup',
         status: 'watch',
-        note: 'Public signup remains for marketplace onboarding — monitor abuse',
+        note: 'Public signup remains for marketplace onboarding — rate-limited',
       },
     ],
   })

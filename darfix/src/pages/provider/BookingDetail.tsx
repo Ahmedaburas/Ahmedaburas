@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ProcessTracker } from '../../components/ProcessTracker'
 import { StatusBadge } from '../../components/StatusBadge'
+import { useToast } from '../../components/Toast'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../store/store'
 
@@ -10,6 +11,7 @@ export function ProviderBookingDetail() {
   const { id } = useParams()
   const { state, currentUser, actions } = useStore()
   const { t, displayName, categoryLabel, problemLabel, formatSar } = useI18n()
+  const toast = useToast()
   const [assignId, setAssignId] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -131,6 +133,7 @@ export function ProviderBookingDetail() {
                 setBusy(true)
                 await actions.assignTechnician(booking.id, assignId)
                 setBusy(false)
+                toast.push(t('toastAssignSuccess'))
               }}
             >
               {t('assignTechnician')}

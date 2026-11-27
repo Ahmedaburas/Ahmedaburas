@@ -32,7 +32,8 @@ export function CustomerHome() {
         <h2 className="mb-4 text-lg font-semibold text-navy-900">{t('trackStatus')}</h2>
         {active.length === 0 ? (
           <EmptyState
-            title={t('noData')}
+            title={t('emptyActiveBookingsTitle')}
+            description={t('emptyActiveBookingsDesc')}
             action={
               <Link to="/app/book" className="btn-primary">
                 {t('bookService')}
@@ -54,7 +55,10 @@ export function CustomerHome() {
           <Star className="h-4 w-4 text-navy-700/30" />
         </div>
         {past.length === 0 ? (
-          <p className="text-sm text-navy-700/50">{t('noData')}</p>
+          <EmptyState
+            title={t('emptyPastBookingsTitle')}
+            description={t('emptyPastBookingsDesc')}
+          />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
             {past.map((b) => (

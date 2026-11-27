@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../../api/client'
 import { EmptyState } from '../../components/EmptyState'
 import { StatusBadge } from '../../components/StatusBadge'
+import { useToast } from '../../components/Toast'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../store/store'
 import { SUBSCRIPTION_PLANS } from '../../store/types'
@@ -11,6 +12,7 @@ import { SUBSCRIPTION_PLANS } from '../../store/types'
 export function ProviderHome() {
   const { state, currentUser, actions } = useStore()
   const { t, locale, displayName, categoryLabel, problemLabel, formatSar } = useI18n()
+  const toast = useToast()
   const org = state.organizations.find((o) => o.id === currentUser?.organizationId)
   const memberTechs = useMemo(() => {
     const memberIds = new Set(
@@ -135,7 +137,7 @@ export function ProviderHome() {
   }, [openLeads, orgBookings, pendingQuotes.length, t])
 
   if (!org) {
-    return <EmptyState title={t('noData')} />
+    return <EmptyState title={t('emptyTowerOrgTitle')} description={t('emptyTowerOrgDesc')} />
   }
 
   return (
@@ -299,7 +301,9 @@ export function ProviderHome() {
                 </span>
               </li>
             ))}
-            {memberTechs.length === 0 && <EmptyState title={t('noData')} />}
+            {memberTechs.length === 0 && (
+              <EmptyState title={t('emptyTeamTitle')} description={t('emptyTeamDesc')} />
+            )}
           </ul>
 
           <form
@@ -317,6 +321,7 @@ export function ProviderHome() {
               })
               if ('error' in result) {
                 setInviteError(result.error)
+                toast.push(result.error, 'error')
                 return
               }
               setInviteForm({ name: '', email: '', phone: '', password: '' })
@@ -326,6 +331,7 @@ export function ProviderHome() {
                 atLimit: result.seats.max != null && result.seats.used >= result.seats.max,
                 trialEndsAt: seats?.trialEndsAt ?? org.trialEndsAt ?? null,
               })
+              toast.push(t('toastInviteSuccess'))
             }}
           >
             <p className="text-sm font-semibold text-navy-900">{t('inviteTechnician')}</p>
@@ -395,7 +401,7 @@ export function ProviderHome() {
       <section>
         <h2 className="mb-3 text-lg font-semibold text-navy-900">{t('leadInbox')}</h2>
         {openLeads.length === 0 ? (
-          <EmptyState title={t('noData')} />
+          <EmptyState title={t('emptyLeadsTitle')} description={t('emptyLeadsDesc')} />
         ) : (
           <div className="space-y-3">
             {openLeads.map((offer) => {
@@ -424,6 +430,7 @@ export function ProviderHome() {
                           setBusy(offer.id)
                           await actions.respondLeadOffer(offer.id, true)
                           setBusy(null)
+                          toast.push(t('toastLeadAccepted'))
                         }}
                       >
                         {t('acceptLead')}
@@ -436,6 +443,7 @@ export function ProviderHome() {
                           setBusy(offer.id)
                           await actions.respondLeadOffer(offer.id, false)
                           setBusy(null)
+                          toast.push(t('toastLeadDeclined'), 'info')
                         }}
                       >
                         {t('declineLead')}
@@ -502,7 +510,7 @@ export function ProviderHome() {
       <section>
         <h2 className="mb-3 text-lg font-semibold text-navy-900">{t('requestPipeline')}</h2>
         {orgBookings.filter((b) => b.organizationId === org.id).length === 0 ? (
-          <EmptyState title={t('noData')} />
+          <EmptyState title={t('emptyPipelineTitle')} description={t('emptyPipelineDesc')} />
         ) : (
           <div className="space-y-3">
             {orgBookings
@@ -542,7 +550,10 @@ export function ProviderHome() {
                         type="button"
                         className="btn-primary"
                         disabled={!assignMap[b.id]}
-                        onClick={() => void actions.assignTechnician(b.id, assignMap[b.id])}
+                        onClick={async () => {
+                          await actions.assignTechnician(b.id, assignMap[b.id])
+                          toast.push(t('toastAssignSuccess'))
+                        }}
                       >
                         {t('assignTechnician')}
                       </button>
