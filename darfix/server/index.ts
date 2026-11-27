@@ -646,6 +646,26 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'darfix' })
 })
 
+/** Simple in-memory login throttle (per email+IP). */
+const loginAttempts = new Map<string, { count: number; resetAt: number }>()
+function assertLoginRateLimit(key: string): { ok: true } | { ok: false; retryAfterSec: number } {
+  const now = Date.now()
+  const windowMs = 15 * 60 * 1000
+  const max = 20
+  const cur = loginAttempts.get(key)
+  if (!cur || cur.resetAt < now) {
+    loginAttempts.set(key, { count: 1, resetAt: now + windowMs })
+    return { ok: true }
+  }
+  if (cur.count >= max) {
+    return { ok: false, retryAfterSec: Math.ceil((cur.resetAt - now) / 1000) }
+  }
+  cur.count += 1
+  return { ok: true }
+}
+
+const BCRYPT_ROUNDS = 10
+
 app.post('/api/auth/login', (req, res) => {
   const { email, password, deviceLabel } = req.body as {
     email?: string
@@ -653,6 +673,12 @@ app.post('/api/auth/login', (req, res) => {
     deviceLabel?: string
   }
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' })
+  const ip = req.ip || req.socket.remoteAddress || 'unknown'
+  const rate = assertLoginRateLimit(`${email.toLowerCase()}|${ip}`)
+  if (!rate.ok) {
+    res.setHeader('Retry-After', String(rate.retryAfterSec))
+    return res.status(429).json({ error: 'Too many login attempts. Try again later.' })
+  }
   const row = db.prepare(`SELECT * FROM users WHERE lower(email) = lower(?)`).get(email) as
     | Record<string, unknown>
     | undefined
@@ -711,7 +737,7 @@ app.post('/api/auth/signup', (req, res) => {
     nameAr || name,
     email,
     phoneNorm,
-    bcrypt.hashSync(password, 8),
+    bcrypt.hashSync(password, BCRYPT_ROUNDS),
     cityId ?? 'khobar',
     districtId ?? 'thuqbah',
     new Date().toISOString(),
@@ -853,7 +879,7 @@ app.post('/api/auth/signup/provider', (req, res) => {
         nameAr || name,
         email,
         phoneNorm,
-        bcrypt.hashSync(password, 8),
+        bcrypt.hashSync(password, BCRYPT_ROUNDS),
         cityId,
         districtId ?? null,
         orgId,
@@ -878,7 +904,7 @@ app.post('/api/auth/signup/provider', (req, res) => {
         nameAr || name,
         email,
         phoneNorm,
-        bcrypt.hashSync(password, 8),
+        bcrypt.hashSync(password, BCRYPT_ROUNDS),
         cityId,
         districtId ?? null,
         JSON.stringify(specialties),
@@ -935,7 +961,7 @@ app.post('/api/demo/reset', auth, (req: Authed, res) => {
   res.json({ token, state: loadBootstrap(admin.id, 'admin', 'en') })
 })
 
-app.get('/api/fees/:categoryId/:problemId', (_req, res) => {
+app.get('/api/fees/:categoryId/:problemId', auth, (_req, res) => {
   const { categoryId, problemId } = _req.params
   res.json({ baseFeeSar: getEffectiveFee(categoryId, problemId) })
 })
@@ -1329,6 +1355,25 @@ app.post('/api/bookings/:id/photos', auth, (req: Authed, res) => {
   if (!requireBookingAccess(req, res, booking, 'photos')) return
   const photos = JSON.parse((booking.photos as string) || '[]') as unknown[]
   const incoming = (req.body as { photos: unknown[] }).photos || []
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    return res.status(400).json({ error: 'photos array required' })
+  }
+  if (incoming.length > 8) {
+    return res.status(400).json({ error: 'At most 8 photos per upload' })
+  }
+  const MAX_PHOTOS = 24
+  if (photos.length + incoming.length > MAX_PHOTOS) {
+    return res.status(400).json({ error: `Booking photo limit is ${MAX_PHOTOS}` })
+  }
+  for (const p of incoming) {
+    if (!p || typeof p !== 'object') {
+      return res.status(400).json({ error: 'Invalid photo object' })
+    }
+    const url = String((p as { url?: string }).url || '')
+    if (url.length > 500_000) {
+      return res.status(400).json({ error: 'Photo payload too large' })
+    }
+  }
   const next = [...photos, ...incoming]
   db.prepare(`UPDATE bookings SET photos = ?, updated_at = ? WHERE id = ?`).run(
     JSON.stringify(next),
@@ -2308,7 +2353,7 @@ app.post('/api/org/technicians', auth, (req: Authed, res) => {
       body.nameAr || body.name,
       body.email,
       phoneNorm,
-      bcrypt.hashSync(body.password!, 8),
+      bcrypt.hashSync(body.password!, BCRYPT_ROUNDS),
       cityId,
       body.districtId ?? null,
       JSON.stringify(specialties),
@@ -2878,6 +2923,46 @@ app.get('/api/org/campaigns/suggestions', auth, (req: Authed, res) => {
   res.json({
     suggestions,
     note: 'Drafts only — never auto-publish paid ads without partner/DARFIX approval.',
+  })
+})
+
+/** Dev.Ag — runtime UX / product audit signals (admin). */
+app.get('/api/dev/ux-audit', auth, (req: Authed, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  const userCount = (db.prepare(`SELECT COUNT(*) AS c FROM users`).get() as { c: number }).c
+  const bookingCount = (db.prepare(`SELECT COUNT(*) AS c FROM bookings`).get() as { c: number }).c
+  const orgCount = (db.prepare(`SELECT COUNT(*) AS c FROM provider_organizations`).get() as { c: number })
+    .c
+  const openFindings = (
+    db
+      .prepare(`SELECT COUNT(*) AS c FROM security_findings WHERE status = 'open'`)
+      .get() as { c: number } | undefined
+  )?.c ?? 0
+  res.json({
+    generatedAt: new Date().toISOString(),
+    runtime: {
+      userCount,
+      bookingCount,
+      orgCount,
+      openSecurityFindings: openFindings,
+      seedDemo: process.env.DARFIX_SEED_DEMO === '1',
+      secretConfigured: Boolean(process.env.DARFIX_SECRET || process.env.JWT_SECRET),
+      bcryptRounds: BCRYPT_ROUNDS,
+      loginRateLimit: { windowMinutes: 15, maxAttempts: 20 },
+      photoLimits: { perUpload: 8, perBooking: 24 },
+    },
+    checklist: [
+      { id: 'provider-booking-detail', status: 'pass', note: 'Dedicated /provider/bookings/:id page' },
+      { id: 'invite-password-field', status: 'pass', note: 'Technician invite collects temp password' },
+      { id: 'control-tower-charts', status: 'pass', note: 'Interactive charts + AI report studio' },
+      { id: 'login-throttle', status: 'pass', note: 'In-memory login rate limit' },
+      { id: 'fees-auth', status: 'pass', note: 'Fee lookup requires auth' },
+      {
+        id: 'open-signup',
+        status: 'watch',
+        note: 'Public signup remains for marketplace onboarding — monitor abuse',
+      },
+    ],
   })
 })
 

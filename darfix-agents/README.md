@@ -57,6 +57,7 @@ All agents connect to the **same DARFIX API** — partner SaaS + demand marketpl
 | BI | `ops-analyst/` | Queue, overview, KPI (read-only) |
 | Growth / campaigns | `growth-marketer/` | Seasonal Saudi campaign drafts (never auto-publish ads) |
 | **Security Guardian** | `security-guardian/` | Continuous audits, threat notify, approval-gated remediations (FE/BE/agents) |
+| **Dev.Ag** | `dev-ag/` | UI/UX + FE/BE gap exploration and product-quality reports |
 
 **Autonomous:** confirm, first assign, field progress, read status, security *audits* + notifications.  
 **Needs Field Ops / admin approval:** cancel, reassign, customer commitments, **security remediations**.  

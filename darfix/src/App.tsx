@@ -15,6 +15,7 @@ import { TechHome } from './pages/technician/TechHome'
 import { TechJobDetail } from './pages/technician/JobDetail'
 import { ProviderHome } from './pages/provider/ProviderHome'
 import { ProviderControlTower } from './pages/provider/ControlTower'
+import { ProviderBookingDetail } from './pages/provider/BookingDetail'
 import { ProviderBilling } from './pages/provider/Billing'
 import { AdminOverview } from './pages/admin/AdminOverview'
 import { AdminBookings, AdminBookingDetail } from './pages/admin/AdminBookings'
@@ -91,7 +92,7 @@ export default function App() {
               <Route index element={<ProviderHome />} />
               <Route path="control-tower" element={<ProviderControlTower />} />
               <Route path="billing" element={<ProviderBilling />} />
-              <Route path="bookings/:id" element={<ProviderHome />} />
+              <Route path="bookings/:id" element={<ProviderBookingDetail />} />
               <Route path="notifications" element={<NotificationsPage />} />
             </Route>
 

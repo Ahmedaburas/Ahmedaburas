@@ -352,10 +352,21 @@ export function ProviderHome() {
                 value={inviteForm.phone}
                 onChange={(e) => setInviteForm({ ...inviteForm, phone: e.target.value })}
               />
-              <button type="submit" className="btn-primary">
+              <input
+                className="input-field"
+                type="password"
+                placeholder={t('tempPassword')}
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={inviteForm.password}
+                onChange={(e) => setInviteForm({ ...inviteForm, password: e.target.value })}
+              />
+              <button type="submit" className="btn-primary sm:col-span-2">
                 {t('inviteTechnician')}
               </button>
             </div>
+            <p className="text-xs text-navy-700/50">{t('tempPasswordHint')}</p>
             {inviteError && <p className="text-sm text-red-600">{inviteError}</p>}
           </form>
         </div>

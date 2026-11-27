@@ -112,7 +112,7 @@ function seedDemoDataset(force: boolean): boolean {
 
   wipeAllData()
 
-  const hash = bcrypt.hashSync(demoPassword, 8)
+  const hash = bcrypt.hashSync(demoPassword, 10)
   const insertUser = db.prepare(`
     INSERT INTO users (
       id, role, name, name_ar, email, phone, password_hash,

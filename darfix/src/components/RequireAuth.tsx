@@ -15,7 +15,10 @@ export function RequireAuth({
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-navy-700/60">
-        Loading…
+        <span className="inline-flex items-center gap-2 rounded-full border border-navy-100 bg-white px-4 py-2 shadow-sm">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-teal-500" />
+          Loading…
+        </span>
       </div>
     )
   }
