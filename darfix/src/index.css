@@ -64,6 +64,38 @@ html[dir="rtl"] body {
   50% { opacity: 0.7; }
 }
 
+@keyframes ken-burns {
+  0% { transform: scale(1) translate(0, 0); }
+  100% { transform: scale(1.12) translate(-1.5%, -1%); }
+}
+
+@keyframes cta-shine {
+  0% { transform: translateX(-120%); }
+  60%, 100% { transform: translateX(120%); }
+}
+
+@keyframes progress-slide {
+  0% { transform: translateX(-40%); }
+  100% { transform: translateX(80%); }
+}
+
+.animate-ken-burns {
+  animation: ken-burns 18s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.animate-cta-shine {
+  animation: cta-shine 3.2s ease-in-out infinite;
+}
+
+.animate-progress-slide {
+  animation: progress-slide 2.4s ease-in-out infinite;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 3s ease-in-out infinite;
+}
+
 .animate-fade-up {
   animation: fade-up 0.45s ease-out both;
 }
