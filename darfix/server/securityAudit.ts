@@ -19,18 +19,19 @@ export type SecurityFinding = {
   recommendedAction: string
 }
 
-export const SECURITY_PLAYBOOK_VERSION = '2026.11.26'
+export const SECURITY_PLAYBOOK_VERSION = '2026.11.27'
 
 export function securityPlaybook() {
   return {
     version: SECURITY_PLAYBOOK_VERSION,
-    updatedAt: '2026-11-26',
+    updatedAt: '2026-11-27',
     principles: [
       'Defense in depth across frontend, API, and agent tools',
       'Never auto-apply remediations that change auth, data, or billing without human approval',
       'Notify admins on critical/high findings and expected threats',
       'Treat peer agents as untrusted callers — scope tools, require approval for sensitive writes',
       'No hardcoded credentials in shipped SPA or agent bundles',
+      'Never activate subscriptions from webhook body claims — verify with Moyasar API + webhook secret',
     ],
     checklist: [
       { id: 'secret-env', area: 'backend', check: 'DARFIX_SECRET must be set outside local ephemeral mode' },
@@ -43,6 +44,16 @@ export function securityPlaybook() {
       { id: 'partner-pii', area: 'data', check: 'Partner directory must not expose CR/phone/WhatsApp publicly' },
       { id: 'discount-leak', area: 'data', check: 'Discount codes not dumped to every customer session' },
       { id: 'mock-pay-gated', area: 'backend', check: 'Mock payment simulate disabled when secrets/prod bound' },
+      {
+        id: 'moyasar-webhook-auth',
+        area: 'backend',
+        check: 'Moyasar webhook requires shared secret + live invoice verify before plan activate',
+      },
+      {
+        id: 'provider-invite-optional',
+        area: 'backend',
+        check: 'Optional DARFIX_PROVIDER_INVITE_CODES for closed partner onboarding',
+      },
     ],
   }
 }
@@ -102,6 +113,20 @@ export function runSecurityAudit(db: Database.Database): SecurityFinding[] {
       surface: 'transport',
       autoFixable: false,
       recommendedAction: 'Set an explicit comma-separated origin allowlist.',
+    })
+  }
+
+  const moyasarKey = (process.env.MOYASAR_SECRET_KEY || '').trim()
+  const webhookSecret = (process.env.MOYASAR_WEBHOOK_SECRET || '').trim()
+  if (moyasarKey && !webhookSecret && (nodeEnv === 'production' || process.env.DARFIX_REQUIRE_SECRET === '1' || Boolean(secret))) {
+    findings.push({
+      code: 'moyasar_webhook_secret_missing',
+      severity: 'high',
+      title: 'Moyasar webhook secret not bound',
+      detail: 'MOYASAR_SECRET_KEY is set but MOYASAR_WEBHOOK_SECRET is empty — hosted webhooks reject until configured.',
+      surface: 'backend',
+      autoFixable: false,
+      recommendedAction: 'Bind MOYASAR_WEBHOOK_SECRET and configure the same value in the Moyasar dashboard webhook.',
     })
   }
 

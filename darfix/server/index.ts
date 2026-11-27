@@ -2793,20 +2793,87 @@ app.post('/api/org/subscription/checkout/:id/simulate', auth, (req: Authed, res)
   })
 })
 
+function timingSafeEqualText(a: string, b: string): boolean {
+  const ba = Buffer.from(a)
+  const bb = Buffer.from(b)
+  if (ba.length !== bb.length) return false
+  return crypto.timingSafeEqual(ba, bb)
+}
+
 /**
- * Moyasar invoice callback / webhook.
- * Activates plan when invoice/payment is paid. Idempotent.
+ * Moyasar webhook auth:
+ * - Shared secret (MOYASAR_WEBHOOK_SECRET) via Bearer / x-moyasar-webhook-secret / ?secret=
+ * - Always required when Moyasar mode is on (fail closed if unset on hosted/pilot)
+ */
+function assertMoyasarWebhookAuth(req: express.Request): { ok: true } | { ok: false; status: number; error: string } {
+  const expected = (process.env.MOYASAR_WEBHOOK_SECRET || '').trim()
+  if (!expected) {
+    // Hosted/pilot with Moyasar must bind a webhook secret — never accept unsigned events.
+    if (isProdLike() || Boolean(process.env.DARFIX_SECRET || process.env.JWT_SECRET)) {
+      return {
+        ok: false,
+        status: 503,
+        error: 'MOYASAR_WEBHOOK_SECRET is not configured',
+      }
+    }
+    // Local Moyasar smoke without webhook secret: still require live API verify below.
+    return { ok: true }
+  }
+  const header =
+    (req.get('x-moyasar-webhook-secret') || req.get('x-webhook-secret') || '').trim()
+  const auth = (req.get('authorization') || '').trim()
+  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : ''
+  const querySecret = String(req.query.secret || '').trim()
+  const provided = header || bearer || querySecret
+  if (!provided || !timingSafeEqualText(provided, expected)) {
+    return { ok: false, status: 401, error: 'Invalid webhook secret' }
+  }
+  return { ok: true }
+}
+
+/**
+ * Activate only after Moyasar API confirms the invoice is paid.
+ * Never trust webhook/callback body or query claims alone.
+ */
+async function verifyMoyasarCheckoutPaid(
+  row: Record<string, unknown>,
+): Promise<{ ok: true; status: string } | { ok: false; error: string; remoteStatus?: string }> {
+  const externalId = String(row.external_id || '').trim()
+  if (!externalId) {
+    return { ok: false, error: 'Checkout has no Moyasar invoice id' }
+  }
+  const provider = getPaymentProvider()
+  if (provider.name !== 'moyasar' || !provider.fetchCheckoutStatus) {
+    return { ok: false, error: 'Moyasar provider unavailable' }
+  }
+  try {
+    const remote = await provider.fetchCheckoutStatus(externalId)
+    if (!remote.paid) {
+      return { ok: false, error: 'Invoice not paid', remoteStatus: remote.status }
+    }
+    return { ok: true, status: remote.status }
+  } catch {
+    return { ok: false, error: 'Could not verify invoice with Moyasar' }
+  }
+}
+
+/**
+ * Moyasar invoice webhook.
+ * Requires shared webhook secret (hosted) + live Moyasar API paid confirmation. Idempotent.
  */
 app.post('/api/payments/moyasar/webhook', async (req, res) => {
-  // Unauthenticated webhook must not activate plans while running in mock mode.
   if (paymentsMode() !== 'moyasar') {
     return res.status(403).json({ error: 'Webhook accepted only when Moyasar is configured' })
   }
+  const authz = assertMoyasarWebhookAuth(req)
+  if (!authz.ok) {
+    return res.status(authz.status).json({ error: authz.error })
+  }
+
   const payload = req.body || {}
   const data = (payload.data || payload) as Record<string, unknown>
   const meta = (data.metadata || {}) as Record<string, string>
   const externalId = String(data.id || payload.id || '')
-  const status = String(data.status || payload.status || '')
   const checkoutId = meta.darfix_checkout_id || String(req.query.checkout || '')
 
   let row: Record<string, unknown> | undefined
@@ -2820,37 +2887,29 @@ app.post('/api/payments/moyasar/webhook', async (req, res) => {
     return res.status(404).json({ error: 'Checkout not found' })
   }
 
-  const paid =
-    status === 'paid' ||
-    String(payload.type || '').includes('paid') ||
-    String(data.status || '') === 'paid'
-
-  if (!paid) {
-    return res.json({ ok: true, ignored: true, status })
-  }
-
   if (row.status === 'paid') {
     return res.json({ ok: true, alreadyPaid: true })
   }
 
-  // Optional live verify when Moyasar keys present
-  const provider = getPaymentProvider()
-  if (provider.name === 'moyasar' && row.external_id && provider.fetchCheckoutStatus) {
-    try {
-      const remote = await provider.fetchCheckoutStatus(String(row.external_id))
-      if (!remote.paid) {
-        return res.json({ ok: true, ignored: true, remoteStatus: remote.status })
-      }
-    } catch {
-      // Fall through to webhook claim if fetch fails (network); still require paid flag above.
+  // Body/query "paid" claims are ignored — only Moyasar API verification can activate.
+  const verified = await verifyMoyasarCheckoutPaid(row)
+  if (!verified.ok) {
+    if (verified.error === 'Could not verify invoice with Moyasar') {
+      return res.status(502).json({ error: verified.error })
     }
+    return res.json({
+      ok: true,
+      ignored: true,
+      reason: verified.error,
+      remoteStatus: verified.remoteStatus,
+    })
   }
 
   activateOrgSubscription(row.organization_id as string, row.plan_id as PlanId, row.id as string)
   res.json({ ok: true, activated: true, planId: row.plan_id })
 })
 
-/** Redirect/callback target after Moyasar hosted invoice (GET). */
+/** Redirect/callback after Moyasar hosted invoice (GET) — activate only after API verify. */
 app.get('/api/payments/moyasar/callback', async (req, res) => {
   const checkoutId = String(req.query.checkout || '')
   const invoiceId = String(req.query.id || req.query.invoice_id || '')
@@ -2868,19 +2927,15 @@ app.get('/api/payments/moyasar/callback', async (req, res) => {
   }
 
   if (row.status !== 'paid') {
-    const provider = getPaymentProvider()
-    let paid = false
-    if (provider.name === 'moyasar' && row.external_id && provider.fetchCheckoutStatus) {
-      try {
-        const remote = await provider.fetchCheckoutStatus(String(row.external_id))
-        paid = remote.paid
-      } catch {
-        paid = false
-      }
+    if (paymentsMode() !== 'moyasar') {
+      return res.redirect(`${base}/provider/billing?checkout=${row.id}&paid=0`)
     }
-    if (paid) {
+    const verified = await verifyMoyasarCheckoutPaid(row)
+    if (verified.ok) {
       activateOrgSubscription(row.organization_id as string, row.plan_id as PlanId, row.id as string)
+      return res.redirect(`${base}/provider/billing?checkout=${row.id}&paid=1`)
     }
+    return res.redirect(`${base}/provider/billing?checkout=${row.id}&paid=0`)
   }
 
   return res.redirect(`${base}/provider/billing?checkout=${row.id}&paid=1`)
@@ -3135,15 +3190,17 @@ app.post('/api/admin/backup', auth, (req: Authed, res) => {
   const src = path.join(dataDir, 'darfix.sqlite')
   if (!fs.existsSync(src)) return res.status(404).json({ error: 'Database file not found' })
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const dest = path.join(dataDir, `darfix-backup-${stamp}.sqlite`)
+  const fileName = `darfix-backup-${stamp}.sqlite`
+  const dest = path.join(dataDir, fileName)
   fs.copyFileSync(src, dest)
   for (const suffix of ['-wal', '-shm']) {
     const side = `${src}${suffix}`
     if (fs.existsSync(side)) fs.copyFileSync(side, `${dest}${suffix}`)
   }
+  // Do not return absolute host paths to the client.
   res.json({
     ok: true,
-    path: dest,
+    fileName,
     note: 'Demo SQLite snapshot. Production should use Postgres automated backups + PITR.',
   })
 })
